@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "repo": {
+    "name": "ghost",
+    "language": "typescript",
+    "framework": null,
+    "monorepo": true,
+    "default_branch": "main"
+  },
+  "commands": {
+    "install": "npm ci",
+    "test": "npx vitest run",
+    "coverage": "npx vitest run --coverage",
+    "typecheck": "npx tsc --noEmit",
+    "lint": null,
+    "build": "npm run build"
+  },
+  "coverage": {
+    "tool": "v8",
+    "current": {
+      "statements": 55,
+      "branches": 45,
+      "functions": 55,
+      "lines": 55
+    },
+    "targets": {
+      "statements": 80,
+      "branches": 70,
+      "functions": 80,
+      "lines": 80
+    },
+    "gaps": [
+      { "file": "packages/core/src/handlers/auth.ts", "coverage": 5, "priority": 1 },
+      { "file": "packages/core/src/db/queries.ts", "coverage": 11, "priority": 2 },
+      { "file": "packages/core/src/billing/stripe.ts", "coverage": 15, "priority": 3 },
+      { "file": "packages/core/src/handlers/tools.ts", "coverage": 22, "priority": 4 },
+      { "file": "packages/core/src/cache/redis.ts", "coverage": 30, "priority": 5 }
+    ]
+  },
+  "scoring": {
+    "formula": "(merge_rate * 0.4) + (coverage_delta * 0.3) + ((1 - regression_rate) * 0.3)",
+    "weights_rationale": "Merge rate highest because shipped > written"
+  },
+  "guardrails": {
+    "immutable_patterns": ["*.config.*", "*.env*", ".github/**", "autocode.manifest.json"],
+    "max_files_per_pr": 5,
+    "max_lines_changed": 200
+  },
+  "time_budgets": {
+    "scout_seconds": 180,
+    "architect_seconds": 180,
+    "builder_seconds": 600,
+    "tester_seconds": 600,
+    "reviewer_seconds": 300,
+    "cycle_max_seconds": 1800
+  },
+  "difficulty": {
+    "current_level": 1,
+    "levels": {
+      "1": "Pure function coverage (no mocking)",
+      "2": "Utility/helper coverage (light mocking)",
+      "3": "Fix existing failing tests",
+      "4": "Integration coverage (DB, API mocks)",
+      "5": "Feature implementation from tickets",
+      "6": "Refactoring with behavior preservation"
+    },
+    "advance_when": "3 consecutive successful cycles at current level"
+  },
+  "model_routing": {
+    "scout": "haiku",
+    "architect": "sonnet",
+    "builder": "opus",
+    "tester": "sonnet",
+    "reviewer": "opus"
+  }
+}

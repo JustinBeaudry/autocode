@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "repo": {
+    "name": "my-cli",
+    "language": "rust",
+    "framework": null,
+    "monorepo": false,
+    "default_branch": "main"
+  },
+  "commands": {
+    "install": "cargo build",
+    "test": "cargo test",
+    "coverage": "cargo tarpaulin --out Stdout",
+    "typecheck": null,
+    "lint": "cargo clippy -- -D warnings",
+    "build": "cargo build --release"
+  },
+  "coverage": {
+    "tool": "tarpaulin",
+    "current": {
+      "statements": 45,
+      "branches": 30,
+      "functions": 40,
+      "lines": 45
+    },
+    "targets": {
+      "statements": 80,
+      "branches": 70,
+      "functions": 80,
+      "lines": 80
+    },
+    "gaps": [
+      { "file": "src/parser.rs", "coverage": 8, "priority": 1 },
+      { "file": "src/config.rs", "coverage": 15, "priority": 2 },
+      { "file": "src/commands/deploy.rs", "coverage": 20, "priority": 3 },
+      { "file": "src/output/formatter.rs", "coverage": 28, "priority": 4 },
+      { "file": "src/utils/fs.rs", "coverage": 35, "priority": 5 }
+    ]
+  },
+  "scoring": {
+    "formula": "(merge_rate * 0.4) + (coverage_delta * 0.3) + ((1 - regression_rate) * 0.3)",
+    "weights_rationale": "Merge rate highest because shipped > written"
+  },
+  "guardrails": {
+    "immutable_patterns": ["*.toml", "*.env*", ".github/**", "autocode.manifest.json"],
+    "max_files_per_pr": 5,
+    "max_lines_changed": 200
+  },
+  "time_budgets": {
+    "scout_seconds": 180,
+    "architect_seconds": 180,
+    "builder_seconds": 600,
+    "tester_seconds": 600,
+    "reviewer_seconds": 300,
+    "cycle_max_seconds": 1800
+  },
+  "difficulty": {
+    "current_level": 1,
+    "levels": {
+      "1": "Pure function coverage (no mocking)",
+      "2": "Utility/helper coverage (light mocking)",
+      "3": "Fix existing failing tests",
+      "4": "Integration coverage (DB, API mocks)",
+      "5": "Feature implementation from tickets",
+      "6": "Refactoring with behavior preservation"
+    },
+    "advance_when": "3 consecutive successful cycles at current level"
+  },
+  "model_routing": {
+    "scout": "haiku",
+    "architect": "sonnet",
+    "builder": "opus",
+    "tester": "sonnet",
+    "reviewer": "opus"
+  }
+}

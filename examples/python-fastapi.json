@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "repo": {
+    "name": "my-api",
+    "language": "python",
+    "framework": "fastapi",
+    "monorepo": false,
+    "default_branch": "main"
+  },
+  "commands": {
+    "install": "pip install -e '.[dev]'",
+    "test": "pytest",
+    "coverage": "pytest --cov=src --cov-report=term-missing",
+    "typecheck": "mypy src/",
+    "lint": "ruff check src/",
+    "build": null
+  },
+  "coverage": {
+    "tool": "coverage.py",
+    "current": {
+      "statements": 62,
+      "branches": 48,
+      "functions": 58,
+      "lines": 62
+    },
+    "targets": {
+      "statements": 80,
+      "branches": 70,
+      "functions": 80,
+      "lines": 80
+    },
+    "gaps": [
+      { "file": "src/routes/auth.py", "coverage": 12, "priority": 1 },
+      { "file": "src/services/payment.py", "coverage": 18, "priority": 2 },
+      { "file": "src/middleware/rate_limit.py", "coverage": 25, "priority": 3 },
+      { "file": "src/utils/crypto.py", "coverage": 35, "priority": 4 },
+      { "file": "src/models/user.py", "coverage": 42, "priority": 5 }
+    ]
+  },
+  "scoring": {
+    "formula": "(merge_rate * 0.4) + (coverage_delta * 0.3) + ((1 - regression_rate) * 0.3)",
+    "weights_rationale": "Merge rate highest because shipped > written"
+  },
+  "guardrails": {
+    "immutable_patterns": ["*.config.*", "*.env*", ".github/**", "autocode.manifest.json", "alembic/**"],
+    "max_files_per_pr": 5,
+    "max_lines_changed": 200
+  },
+  "time_budgets": {
+    "scout_seconds": 180,
+    "architect_seconds": 180,
+    "builder_seconds": 600,
+    "tester_seconds": 600,
+    "reviewer_seconds": 300,
+    "cycle_max_seconds": 1800
+  },
+  "difficulty": {
+    "current_level": 1,
+    "levels": {
+      "1": "Pure function coverage (no mocking)",
+      "2": "Utility/helper coverage (light mocking)",
+      "3": "Fix existing failing tests",
+      "4": "Integration coverage (DB, API mocks)",
+      "5": "Feature implementation from tickets",
+      "6": "Refactoring with behavior preservation"
+    },
+    "advance_when": "3 consecutive successful cycles at current level"
+  },
+  "model_routing": {
+    "scout": "haiku",
+    "architect": "sonnet",
+    "builder": "opus",
+    "tester": "sonnet",
+    "reviewer": "opus"
+  }
+}
