@@ -79,7 +79,7 @@ Each agent has strict boundaries:
 
 | Agent | Can Read | Can Write | Model |
 |-------|----------|-----------|-------|
-| Scout | Everything | Nothing | Haiku |
+| Scout | Everything | Nothing | Sonnet |
 | Architect | Everything | Specs only | Sonnet |
 | Builder | Everything | Source files only | Opus |
 | Tester | Everything | Test files only | Sonnet |
@@ -131,6 +131,18 @@ See [docs/customization.md](docs/customization.md) for manifest tuning.
 - [TypeScript Monorepo](examples/typescript-monorepo.json)
 - [Python FastAPI](examples/python-fastapi.json)
 - [Rust CLI](examples/rust-cli.json)
+
+## Dogfood Results
+
+First run against [Ghost v2](https://github.com/ajsai47/ghostv2) (TypeScript monorepo, 1005 tests):
+
+| Cycle | Target | Tests Added | Duration | PR |
+|-------|--------|-------------|----------|-----|
+| 1 | `page-tree.ts` | 69 | ~3 min | [#25](https://github.com/ajsai47/ghostv2/pull/25) |
+| 2 | `heuristic-generator.ts` | 79 | ~7 min | [#26](https://github.com/ajsai47/ghostv2/pull/26) |
+| 3 | `adaptive-selector.ts` | 27 | ~2 min | [#27](https://github.com/ajsai47/ghostv2/pull/27) |
+
+**175 tests shipped across 3 PRs, 100% success rate, Level 1 → Level 2 after 3 consecutive wins.**
 
 ## Requirements
 

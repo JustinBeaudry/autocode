@@ -92,7 +92,7 @@ The factory stops when:
 ## Cost Considerations
 
 AutoCode is designed to be cost-efficient:
-- Scout and Tester use Haiku/Sonnet (cheap, fast models)
+- Scout and Tester use Sonnet (balanced cost/reliability)
 - Builder and Reviewer use Opus (expensive but necessary for quality)
 - Small PR sizes mean shorter agent sessions
 - Progressive difficulty means early cycles are cheap and fast

@@ -47,15 +47,32 @@ Find the test, build, lint, and typecheck commands:
 
 **For Rust projects**: Commands are typically standard (`cargo test`, `cargo build`, etc.)
 
-### 4. Verify Tests Pass
+### 4. Install Coverage Tooling (if missing)
+
+If no coverage command was detected, check if coverage tooling can be installed:
+
+**Node.js (vitest)**: Check if `@vitest/coverage-v8` is in devDependencies. If not, ask the user:
+> "No coverage tool detected. Install `@vitest/coverage-v8` for accurate coverage tracking? (Recommended)"
+
+If approved, run `npm install -D @vitest/coverage-v8` and set coverage command to `vitest run --coverage`.
+
+**Node.js (jest)**: If jest is the test runner, coverage is built-in: `jest --coverage`.
+
+**Python**: Check for `coverage` or `pytest-cov` in dependencies. If missing, suggest `pip install pytest-cov`.
+
+**Rust**: Check if `cargo-tarpaulin` is installed. If not, suggest `cargo install cargo-tarpaulin`.
+
+This step is critical — without real coverage data, the factory guesses at gaps and can't measure improvement.
+
+### 5. Verify Tests Pass
 
 Run the test command once to verify it works. If tests fail, warn the user but continue — the manifest should still be generated.
 
 Use Bash to run the test command. Capture the output.
 
-### 5. Run Coverage (if available)
+### 6. Run Coverage
 
-If a coverage command was detected, run it. Parse the output to extract:
+If a coverage command exists (detected or just installed), run it. Parse the output to extract:
 - Overall coverage percentages (statements, branches, functions, lines)
 - Per-file coverage to identify gaps
 
@@ -64,7 +81,9 @@ Coverage output parsing by tool:
 - **coverage.py**: Look for the summary line
 - **tarpaulin**: Look for the final percentage
 
-### 6. Identify Coverage Gaps
+**IMPORTANT**: If coverage tooling is not available and the user declined to install it, do NOT estimate coverage by reading code. Set coverage to null and note it. Estimated coverage is misleading — it's better to have no data than wrong data.
+
+### 7. Identify Coverage Gaps
 
 From the coverage output, find files with the lowest coverage. Sort them by coverage percentage (ascending). These become the `gaps` array in the manifest, with priority = rank.
 
@@ -74,7 +93,7 @@ Filter out:
 - Type definition files (`.d.ts`)
 - Generated files
 
-### 7. Detect CI
+### 8. Detect CI
 
 Check for CI configuration:
 - `.github/workflows/*.yml` → GitHub Actions
@@ -82,11 +101,11 @@ Check for CI configuration:
 - `.circleci/config.yml` → CircleCI
 - `Jenkinsfile` → Jenkins
 
-### 8. Detect Default Branch
+### 9. Detect Default Branch
 
 Run `git remote show origin 2>/dev/null | grep "HEAD branch"` to detect the default branch. Fall back to checking if `main` or `master` exists.
 
-### 9. Generate Manifest
+### 10. Generate Manifest
 
 Assemble the `autocode.manifest.json` with all detected values. Use sensible defaults for anything not detected:
 
@@ -144,7 +163,7 @@ Assemble the `autocode.manifest.json` with all detected values. Use sensible def
     "advance_when": "3 consecutive successful cycles at current level"
   },
   "model_routing": {
-    "scout": "haiku",
+    "scout": "sonnet",
     "architect": "sonnet",
     "builder": "opus",
     "tester": "sonnet",
@@ -153,7 +172,7 @@ Assemble the `autocode.manifest.json` with all detected values. Use sensible def
 }
 ```
 
-### 10. Present for Review
+### 11. Present for Review
 
 Display the generated manifest to the user in a code block. Ask them to review it and confirm before saving.
 
@@ -164,18 +183,26 @@ Highlight:
 - Top 5 coverage gaps (these will be the first targets)
 - Any values that were defaulted (couldn't auto-detect)
 
-### 11. Save
+### 12. Save
 
 On user approval, write `autocode.manifest.json` to the repository root.
 
-Also create the `.autocode/memory/` directory with empty memory files:
-- `.autocode/memory/fixes.md` — header only
-- `.autocode/memory/failures.md` — header only
-- `.autocode/memory/velocity.md` — header only
-- `.autocode/memory/coverage.md` — header only
-- `.autocode/memory/lessons.md` — header only
+Also create the `.autocode/memory/` directory with seeded memory files (not empty — Claude Code requires reading a file before writing, so pre-populate with a record template):
+- `.autocode/memory/fixes.md` — header + "No fixes yet."
+- `.autocode/memory/failures.md` — header + "No failures yet."
+- `.autocode/memory/velocity.md` — header + "No cycles yet."
+- `.autocode/memory/coverage.md` — header + "No coverage data yet."
+- `.autocode/memory/lessons.md` — header + "No lessons yet."
 
-Add `.autocode/` to `.gitignore` if not already present.
+Add `.autocode/` and `autocode.manifest.json` to `.gitignore` if not already present.
+
+### 13. Create GitHub Label
+
+Create the `autocode` label on the repo so PRs get tagged:
+
+```bash
+gh label create autocode --description "Automated by AutoCode" --color "0E8A16" 2>/dev/null || true
+```
 
 ## Error Handling
 

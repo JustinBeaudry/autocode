@@ -106,7 +106,7 @@ Control which AI models each agent uses:
 ```json
 {
   "model_routing": {
-    "scout": "haiku",
+    "scout": "sonnet",
     "architect": "sonnet",
     "builder": "opus",
     "tester": "sonnet",
@@ -115,7 +115,7 @@ Control which AI models each agent uses:
 }
 ```
 
-- Use "haiku" for cost-efficient agents (Scout, simple Tester work)
+- Use "sonnet" for Scout and Tester (Haiku may fail on repos with many MCP tools)
 - Use "sonnet" for mid-complexity agents (Architect, Tester)
 - Use "opus" for high-judgment agents (Builder, Reviewer)
 

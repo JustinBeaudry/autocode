@@ -28,7 +28,9 @@ AutoCode uses 5 specialized agents, each with strict constraints on what they ca
 - Previous failure notes
 - Recommendations
 
-**Model**: Haiku (fast, cheap — this is a read-heavy task)
+**Model**: Sonnet (Haiku may fail on repos with many MCP tools due to schema size limits)
+
+**Note**: At Level 1-2, the orchestrator skips spawning a separate Scout agent and gathers context inline — the Builder reads the same files anyway. Scout is spawned at Level 3+.
 
 **Time budget**: 180 seconds (default)
 

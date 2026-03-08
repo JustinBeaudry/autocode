@@ -199,7 +199,7 @@
     "model_routing": {
       "type": ["object", "null"],
       "properties": {
-        "scout": { "type": "string", "default": "haiku" },
+        "scout": { "type": "string", "default": "sonnet", "description": "Haiku may fail on repos with many MCP tools. Sonnet is the safe default." },
         "architect": { "type": "string", "default": "sonnet" },
         "builder": { "type": "string", "default": "opus" },
         "tester": { "type": "string", "default": "sonnet" },

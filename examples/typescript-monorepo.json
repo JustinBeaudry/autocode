@@ -67,7 +67,7 @@
     "advance_when": "3 consecutive successful cycles at current level"
   },
   "model_routing": {
-    "scout": "haiku",
+    "scout": "sonnet",
     "architect": "sonnet",
     "builder": "opus",
     "tester": "sonnet",
