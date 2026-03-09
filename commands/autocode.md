@@ -34,7 +34,7 @@ Read the manifest's `coverage.gaps` array. For each gap, check the failure map a
 2. **Too many failures**: If the file has 3+ total failure attempts → SKIP (too hard at current level)
 3. **Cooldown**: If the file was attempted in the last 2 cycles (compare its `last_attempt_timestamp` against the last 2 cycle timestamps in `.autocode/memory/velocity.md`) → SKIP
 4. **Immutable**: If the file is in the manifest's immutable patterns list → SKIP
-5. **Difficulty mismatch**: If the file doesn't match the current difficulty level → SKIP
+5. **Already at target**: If the file's coverage percentage in the gaps array already meets ALL coverage targets from `manifest.coverage.targets` → SKIP
 
 Pick the highest-priority gap that passes all rules.
 
@@ -388,6 +388,24 @@ If coverage data was NOT available:
 - Coverage delta: +<N>%
 ```
 
+**`.autocode/memory/costs.md`** (after every cycle): Append a cost estimate:
+```
+## Cycle <N> — <timestamp>
+- Target: <file>
+- Agents: <list agents spawned and their models, e.g., "Scout (sonnet) + Builder (opus) + Reviewer (opus)">
+- Estimated cost: $<estimate>
+- Running total: $<sum of all previous cycles + this one>
+```
+
+Cost estimation per agent (based on typical token usage):
+- Haiku agent: ~$0.01
+- Sonnet agent: ~$0.10
+- Opus agent: ~$0.50
+
+Sum the agents spawned in this cycle. For example, a Level 3+ cycle with Scout (sonnet) + Architect (sonnet) + Builder (opus) + Tester (sonnet) + Reviewer (opus) ≈ $0.10 + $0.10 + $0.50 + $0.10 + $0.50 = $1.30.
+
+If the running total exceeds $10 in this session, print a warning: "Cost warning: estimated spend has exceeded $10 this session."
+
 **`.autocode/memory/lessons.md`** (after every cycle): Extract and append lessons learned:
 
 **On SUCCESS**: Extract what worked:
@@ -542,6 +560,7 @@ Cycle <N> complete:
   Review: <APPROVED | APPROVED (after retry) | REJECTED (2x, abandoned)>
   Coverage: <file>: <X>% → <Y>% (+<Z>%) | Overall: <A>% → <B>% (+<C>%) | or "N/A"
   PR: <URL or N/A>
+  Cost: ~$<estimated cycle cost>
   Duration: <seconds>
   Level: <current difficulty level>
   Streak: <consecutive successes>

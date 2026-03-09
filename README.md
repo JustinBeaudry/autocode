@@ -81,6 +81,7 @@ Per-repo memory in `.autocode/memory/` prevents loops and accumulates knowledge:
 - `velocity.md` -- PRs shipped, merge rates, timing
 - `coverage.md` -- per-file coverage progression
 - `lessons.md` -- patterns that work, patterns that fail
+- `costs.md` -- per-cycle cost estimates and running totals
 
 ## Commands
 
@@ -109,6 +110,7 @@ See [docs/customization.md](docs/customization.md) for manifest tuning.
 - [TypeScript Monorepo](examples/typescript-monorepo.json)
 - [Python FastAPI](examples/python-fastapi.json)
 - [Rust CLI](examples/rust-cli.json)
+- [Go API](examples/go-api.json)
 
 ## Dogfood Results
 
@@ -128,7 +130,7 @@ First run against [Ghost v2](https://github.com/ajsai47/ghostv2) (TypeScript mon
 ## Troubleshooting
 
 **"No test command detected"**
-Specify your test command explicitly in `autocode.manifest.json` under the `testCommand` field. The bootstrap step infers it, but some repos need manual configuration.
+Specify your test command explicitly in `autocode.manifest.json` under `commands.test`. The bootstrap step infers it, but some repos need manual configuration.
 
 **"Coverage not available"**
 Run `/autocode-bootstrap` to install coverage tooling. AutoCode needs a coverage reporter to track progress and select targets.

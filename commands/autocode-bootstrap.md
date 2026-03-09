@@ -193,10 +193,6 @@ Assemble the `autocode.manifest.json` with all detected values. Use sensible def
     "targets": { "statements": 80, "branches": 70, "functions": 80, "lines": 80 },
     "gaps": []
   },
-  "scoring": {
-    "formula": "(merge_rate * 0.4) + (coverage_delta * 0.3) + ((1 - regression_rate) * 0.3)",
-    "weights_rationale": "Merge rate highest because shipped > written"
-  },
   "guardrails": {
     "immutable_patterns": ["*.config.*", "*.env*", ".github/**", "autocode.manifest.json"],
     "max_files_per_pr": 5,
@@ -253,6 +249,7 @@ Also create the `.autocode/memory/` directory with seeded memory files (not empt
 - `.autocode/memory/velocity.md` — header + "No cycles yet."
 - `.autocode/memory/coverage.md` — header + "No coverage data yet."
 - `.autocode/memory/lessons.md` — header + "No lessons yet."
+- `.autocode/memory/costs.md` — header + "No cost data yet."
 
 Add `.autocode/` and `autocode.manifest.json` to `.gitignore` if not already present.
 

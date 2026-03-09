@@ -122,20 +122,6 @@
         }
       }
     },
-    "scoring": {
-      "type": ["object", "null"],
-      "properties": {
-        "formula": {
-          "type": "string",
-          "default": "(merge_rate * 0.4) + (coverage_delta * 0.3) + ((1 - regression_rate) * 0.3)",
-          "description": "Scoring formula for cycle quality"
-        },
-        "weights_rationale": {
-          "type": "string",
-          "description": "Why these weights were chosen"
-        }
-      }
-    },
     "guardrails": {
       "type": "object",
       "properties": {
@@ -167,7 +153,7 @@
         "builder_seconds": { "type": "integer", "default": 600 },
         "tester_seconds": { "type": "integer", "default": 600 },
         "reviewer_seconds": { "type": "integer", "default": 300 },
-        "cycle_max_seconds": { "type": "integer", "default": 1800 }
+        "cycle_max_seconds": { "type": "integer", "default": 1800, "description": "Maximum total session time in seconds (not per-cycle). Factory stops after this duration." }
       }
     },
     "difficulty": {
