@@ -135,6 +135,12 @@ Coverage output parsing by tool:
 
 - **go tool cover -func** (Go): Each line shows `file:line: FuncName percentage%`. The last line starting with `total:` has the overall statement coverage. Parse each function-level line for per-file gaps and the total for overall coverage.
 
+**IMPORTANT**: Store the raw coverage output format in the manifest so the orchestrator knows how to parse it during cycles. The `coverage.tool` field tells downstream agents which parser to use:
+- `"v8"` or `"istanbul"`: Look for the table with `% Stmts | % Branch | % Funcs | % Lines` columns
+- `"pytest-cov"`: Look for `Name | Stmts | Miss | Cover` columns
+- `"tarpaulin"`: Look for `|| file: tested/total` lines
+- `"go-cover"`: Look for `file:line: FuncName percentage%` lines
+
 **IMPORTANT**: If coverage tooling is not available and the user declined to install it, do NOT estimate coverage by reading code. Set coverage to null and note it. Estimated coverage is misleading — it's better to have no data than wrong data.
 
 ### 7. Identify Coverage Gaps
