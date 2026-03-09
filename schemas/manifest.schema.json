@@ -75,7 +75,7 @@
       "properties": {
         "tool": {
           "type": ["string", "null"],
-          "enum": ["v8", "istanbul", "coverage.py", "tarpaulin", "go-cover", "jacoco", null],
+          "enum": ["v8", "istanbul", "pytest-cov", "tarpaulin", "go-cover", null],
           "description": "Coverage tool in use"
         },
         "current": {
@@ -199,12 +199,24 @@
     "model_routing": {
       "type": ["object", "null"],
       "properties": {
-        "scout": { "type": "string", "default": "sonnet", "description": "Haiku may fail on repos with many MCP tools. Sonnet is the safe default." },
-        "architect": { "type": "string", "default": "sonnet" },
-        "builder": { "type": "string", "default": "opus" },
-        "tester": { "type": "string", "default": "sonnet" },
-        "reviewer": { "type": "string", "default": "opus" }
+        "scout": { "type": "string", "default": "sonnet", "description": "Model for the Scout agent (read-only codebase exploration). Default: sonnet. Sonnet recommended. Haiku may fail on repos with many MCP tools due to schema size limits." },
+        "architect": { "type": "string", "default": "sonnet", "description": "Model for the Architect agent (spec writing, L3+ only). Default: sonnet." },
+        "builder": { "type": "string", "default": "opus", "description": "Model for the Builder agent (implementation). Default: opus." },
+        "tester": { "type": "string", "default": "sonnet", "description": "Model for the Tester agent (test writing, L3+ only). Default: sonnet." },
+        "reviewer": { "type": "string", "default": "opus", "description": "Model for the Reviewer agent (quality gate). Default: opus." }
       }
+    },
+    "ignore_diminishing_returns": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, the factory continues even when coverage improvements are less than 0.5% for 5 consecutive cycles"
+    },
+    "parallel": {
+      "type": "integer",
+      "default": 1,
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Number of parallel pipelines to run simultaneously. Each pipeline gets its own worktree."
     }
   }
 }
