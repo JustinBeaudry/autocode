@@ -2,6 +2,16 @@
 
 Preview what the next AutoCode cycle would do, without actually doing it.
 
+## Output Format
+
+Start with the branded header:
+```
+  ┌─────────────────────────────────────┐
+  │  AutoCode — Next (Dry Run)          │
+  │  <repo name> · Level <N> · v4.1     │
+  └─────────────────────────────────────┘
+```
+
 ## Steps
 
 ### Step 0: Verify Prerequisites
@@ -87,7 +97,11 @@ Context:
   Difficulty:      Level 3
   Previous fails:  0 for this target
   Relevant lessons: 2 found
-  Estimated cost:   ~$1.10
+
+Estimated Cost:
+  This cycle:    ~$1.10 (Builder=opus, Reviewer=opus)
+  Session budget: $5.00 remaining
+  After cycle:   ~$3.90 remaining
 
 No changes made — this is a dry run.
 Run /autocode to execute the next cycle.

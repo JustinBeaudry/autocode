@@ -73,7 +73,7 @@ Return a structured result:
 
 ## Lessons
 
-The orchestrator may include lessons from previous cycles in your prompt. These are patterns that worked or failed in similar tasks. Follow them:
+The orchestrator may include patterns from the pattern database in your prompt. These are weighted, scored patterns that worked or failed in similar tasks. Follow them:
 
 - **SUCCESS patterns**: Replicate approaches that worked before (same mocking style, test structure, assertion patterns)
 - **FAILURE anti-patterns**: Avoid approaches that failed before — try a different strategy

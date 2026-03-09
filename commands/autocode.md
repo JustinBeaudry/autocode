@@ -2,12 +2,29 @@
 
 You are the AutoCode Orchestrator. You run a continuous cycle of work — selecting targets from a unified work queue, spawning agents, shipping PRs — all autonomously.
 
+## Output Format
+
+Always start with the branded header:
+```
+  ┌─────────────────────────────────────┐
+  │  AutoCode — Factory                 │
+  │  <repo name> · Level <N> · v4.1     │
+  └─────────────────────────────────────┘
+```
+
+Use these status indicators consistently:
+- `✓` for success/pass
+- `✗` for failure/fail
+- `○` for pending/skipped
+- `►` for in-progress/current
+- `$` prefix for cost values
+
 ## Prerequisites
 
 Before starting, verify:
 1. `autocode.manifest.json` exists in the repo root. If not, tell the user to run `/autocode-bootstrap` first.
 2. Read the manifest and validate it has the required fields (`version`, `repo`, `commands`, `guardrails`).
-3. The `.autocode/memory/` directory exists. If not, create it with empty memory files.
+3. The `.autocode/memory/` directory exists. If not, create it with empty memory files (including `knowledge.json`, `patterns.json`, `ci_patterns.json`, `feedback_log.json`).
 
 ### Step 0: Verify Prerequisites
 
@@ -31,6 +48,71 @@ Prerequisites:
 ```
 
 If `gh auth status` fails, stop with: "GitHub CLI not authenticated. Run `gh auth login` first."
+
+### Step 0b-prime: First-Run Welcome
+
+Check if `.autocode/memory/velocity.md` has any cycle entries (more than just the header). If not, this is a first run — show a welcome message:
+
+```
+  Welcome to AutoCode! Here's what will happen:
+  1. Build a work queue from your coverage gaps
+  2. Create an isolated git worktree for each cycle
+  3. Scout → Builder → Reviewer pipeline
+  4. Ship a PR if approved
+  5. Repeat until budget or targets exhausted
+
+  Tip: Run /autocode-next first to preview what would happen.
+```
+
+### Step 0c: Budget Initialization
+
+Read budget configuration from the manifest:
+- `manifest.budget.session_max_usd` (default: $5.00)
+- `manifest.budget.cycle_max_usd` (default: $2.00)
+- `manifest.budget.warn_at_percent` (default: 80)
+
+Initialize the session budget tracker:
+```
+session_spent = 0.00
+session_budget = manifest.budget.session_max_usd (or 5.00 if not set)
+cycle_budget = manifest.budget.cycle_max_usd (or 2.00 if not set)
+```
+
+If running in daemon mode, also read `.autocode/daemon_state.json` for today's spending and compute remaining daily budget:
+```
+daily_remaining = manifest.daemon.daily_budget_usd - daemon_state.today_spent_usd
+session_budget = min(session_budget, daily_remaining)
+```
+
+### Step 0d: Cost Confirmation (first cycle only)
+
+Display estimated costs before starting:
+
+```
+  Estimated cost per cycle:
+    Level 1-2 (coverage):  ~$0.30-1.00/cycle (Builder + Reviewer)
+    Level 3+  (full pipe): ~$1.50-3.00/cycle (all agents)
+
+  Session budget: $<session_budget> limit
+  Model routing: Builder=<model>, Reviewer=<model>
+
+  Proceed? (The factory will stop when the budget is reached)
+```
+
+If the user is in auto-accept mode (non-interactive), skip confirmation and just log the estimate.
+
+### Step 0b: Run Discovery (if enabled)
+
+If `manifest.discovery.enabled` is true:
+1. Check if `.autocode/discovery.json` already exists and was created within the last 6 hours → skip (discovery is expensive, don't re-run within the same session window)
+2. Otherwise, spawn the Discoverer agent:
+   - `subagent_type`: "general-purpose"
+   - `model`: From `manifest.model_routing.scout` (default: "sonnet")
+   - `prompt`: Include manifest, discovery config, existing work queue summary, existing discovery items
+3. Save results to `.autocode/discovery.json`
+4. Log: "Discovery found <N> items: <summary by module>"
+
+Discovery runs once per session (interactive mode) or once per daemon run — not every cycle.
 
 ## The Cycle Loop
 
@@ -130,6 +212,37 @@ For PRs with `reviewDecision` of `CHANGES_REQUESTED` or with pending review comm
 - **Source**: `pr_review`
 - **Reference**: `PR #<number>`
 
+#### 1f-prime. Ingest plans
+If `.autocode/plans/` directory exists:
+
+For each `.json` file in `.autocode/plans/`:
+1. Read the plan file
+2. Skip if `status` is `"completed"` or `"cancelled"`
+3. Find steps with `status: "pending"` where ALL `blocked_by` steps have `status: "completed"`
+4. Each unblocked pending step becomes a work item:
+   - **Type**: `step.work_type`
+   - **Priority**: 1 (plan steps take high priority — shipping a plan beats random coverage)
+   - **Target files**: `step.target_files`
+   - **Description**: `step.description` + "\n\nPlan context: " + plan title
+   - **Source**: `plan`
+   - **Reference**: `"Plan: <plan.title> / Step: <step.title>"`
+   - **Metadata**: `{ plan_id: plan.id, step_id: step.id }`
+
+If a step has `status: "failed"`, it does NOT block unrelated steps — only steps that have the failed step in their `blocked_by` array are blocked.
+
+#### 1f-double-prime. Ingest discovery items
+If `.autocode/discovery.json` exists and `manifest.discovery.enabled` is true (or the file was manually created via `/autocode-discover`):
+
+Read `.autocode/discovery.json`. For each item:
+- **Type**: `item.type`
+- **Priority**: `item.priority` (default: 4)
+- **Target files**: `item.target_files`
+- **Description**: `item.description`
+- **Source**: `discovery`
+- **Reference**: `item.reference`
+
+Deduplication: Skip any discovery item whose target file is already in the work queue from another source (coverage gaps, GitHub Issues, backlog, etc.).
+
 #### 1f. Ingest tech debt signals (optional)
 If `manifest.work_sources.tech_debt` is true:
 
@@ -147,10 +260,12 @@ Each TODO/FIXME with enough context (more than just "TODO: fix this") becomes a 
 
 Sort all work items by:
 1. Focus overrides first (user-specified, highest priority)
-2. Review responses second (unblock existing PRs before creating new ones)
-3. Bugfixes with `priority:critical` (priority = 1) or `priority:high` (priority = 2)
-4. Features and coverage items by their priority number
-5. Tech debt and docs at the bottom
+2. Plan steps second (unblocked, in dependency order — shipping a plan beats random work)
+3. Review responses third (unblock existing PRs before creating new ones)
+4. Bugfixes with `priority:critical` (priority = 1) or `priority:high` (priority = 2)
+5. Features and coverage items by their priority number
+6. Discovery items (priority 4 default — above tech debt, below features)
+7. Tech debt and docs at the bottom
 
 Apply the skip rules (failure count, cooldown, etc.) to all items that have target files.
 
@@ -242,13 +357,39 @@ If coverage command is not available, skip this step.
 - `prompt`: Include the work item (type, description, target files, source), manifest contents, and any relevant failure memory
 - The Scout returns a context report
 
-**Lesson injection**: Read `.autocode/memory/lessons.md` and extract the 5 most recent relevant lessons (matching the target file's language, framework, or testing patterns). Include them in the context passed to downstream agents:
+**Pattern injection**: If `manifest.brain.pattern_database` is true (default), query `.autocode/memory/patterns.json` for the top 5 relevant patterns. Otherwise, fall back to scanning `.autocode/memory/lessons.md` for the 5 most recent relevant lessons.
+
+**Pattern retrieval from patterns.json**:
+
+1. Read `patterns.json` and filter patterns by relevance to the current work item:
+   - Match `tags` against: target file's language, framework, test runner
+   - Match `file_types` against: target file's type (from manifest gaps or knowledge graph)
+   - Match `work_types` against: current work item's type
+   - Match `category` against relevant categories for the work type
+
+2. Score each matching pattern:
+   ```
+   score = (success_count / (success_count + failure_count)) * recency_weight * tag_match_count
+   recency_weight = 1.0 if pattern age < 7 days, 0.8 if < 30 days, 0.5 otherwise
+   ```
+
+3. Select the top 5 patterns by score.
+
+4. Include them in the context passed to downstream agents:
+   ```
+   ## Relevant Patterns from Pattern Database
+   - [p_001] (score: 0.92, category: test_approach): Use vi.spyOn for utility functions that call other internal functions
+   - [p_002] (score: 0.85, category: mock_strategy): Mock fs module at the top level, not inside individual tests
+   - [p_003] (score: 0.78, category: error_fix): Add null checks before property access on optional chain results
+   - [p_004] (score: 0.65, category: review_pattern): Always include error path tests — Reviewer consistently rejects without them
+   - [p_005] (score: 0.60, category: human_feedback): Use descriptive test names matching the function signature
+   ```
+
+**Knowledge graph context**: If `manifest.brain.knowledge_graph` is true and the Scout returned knowledge graph context, pass it to the Architect and Builder along with the patterns:
 
 ```
-## Relevant Lessons from Previous Cycles
-- <lesson 1 summary>
-- <lesson 2 summary>
-- <lesson 3 summary>
+## Knowledge Graph Context
+<Scout's knowledge graph context section>
 ```
 
 ### Step 3b: Design Spec (Architect)
@@ -265,11 +406,33 @@ Spawn an Architect agent:
 
 Pass the Architect's spec to the Builder in Step 4 and to the Reviewer and Tester for validation.
 
+### Step 3c: Budget-Aware Model Selection
+
+Before spawning any agent, check the remaining budget:
+
+```
+remaining = session_budget - session_spent
+```
+
+If `remaining < cycle_budget` (default: $2.00), downgrade expensive models for this cycle:
+- Builder: opus → sonnet
+- Reviewer: opus → sonnet
+- Log: "Budget optimization: Switching to Sonnet routing ($<remaining> remaining of $<session_budget>)"
+
+Cost estimation table:
+| Model | Estimated cost per spawn |
+|-------|-------------------------|
+| haiku | ~$0.01 |
+| sonnet | ~$0.05-0.15 |
+| opus | ~$0.30-1.00 |
+
+This downgrade is per-cycle — if budget recovers (e.g., a cheap cycle), the next cycle uses the manifest's default models.
+
 ### Step 4: Spawn Builder
 
 Use the Agent tool to spawn a Builder agent:
 - `subagent_type`: "general-purpose"
-- `model`: From `manifest.model_routing.builder` (default: "opus")
+- `model`: From Step 3c model selection (manifest default or budget-downgraded)
 - `prompt`: Include:
   - The work item (type, description, source, target files)
   - Context (inline Scout context at L1-2, or Architect's spec at L3+)
@@ -424,16 +587,70 @@ gh run list --branch <default_branch> --limit 1 --json status,conclusion,headSha
 #### 6b-2. CI Passed
 If `conclusion` is "success" → proceed to Step 7.
 
-#### 6b-3. CI Failed — Create Revert PR
-If `conclusion` is "failure":
+#### 6b-3. CI Failed — Parse Logs (CI-Aware Shipping)
+
+If `conclusion` is "failure" and `manifest.ci.auto_fix` is true (default):
+
+**1. Read CI logs:**
+```bash
+# Get the failed run ID
+RUN_ID=$(gh run list --branch <default_branch> --limit 1 --json databaseId --jq '.[0].databaseId')
+# Get failed job logs
+gh run view $RUN_ID --log-failed 2>/dev/null | tail -200
+```
+
+**2. Categorize the failure:**
+
+| Category | Signal | Fix Strategy |
+|----------|--------|-------------|
+| `test_failure` | "FAIL", "AssertionError", "Expected X got Y" | Re-run Builder with test output + error |
+| `type_error` | "TS2", "TypeError", "type mismatch" | Re-run Builder with type error details |
+| `lint_error` | "eslint", "pylint", "clippy" | Re-run Builder with lint output |
+| `build_error` | "Cannot find module", "import error" | Re-run Builder with build error |
+| `env_error` | "ECONNREFUSED", "timeout", "rate limit" | Log as infra issue, do NOT attempt fix |
+| `unknown` | No recognizable pattern | Log and revert |
+
+**3. Extract error context:**
+- File paths and line numbers from error output
+- The specific error message
+- The test name or build step that failed
+
+#### 6b-4. CI Failed — Attempt Fix
+
+For fixable categories (`test_failure`, `type_error`, `lint_error`, `build_error`) that are in `manifest.ci.fixable_categories`:
+
+**1. Check CI pattern database** (`.autocode/memory/ci_patterns.json`) for known fixes matching the error signature.
+
+**2. Create a fix branch from the merge commit:**
+```bash
+git checkout -b autocode/ci-fix-<run_id> <merge_sha>
+```
+
+**3. Spawn Builder with CI fix context:**
+- `work_type`: `ci_fix`
+- Error category, error message, affected files
+- Any relevant CI patterns from the database
+- The original PR diff for context
+- Instruction: "Fix the CI failure. Do NOT modify test expectations — fix the source code to make tests pass."
+
+**4. Run the test command locally** to verify the fix.
+
+**5. If fix passes:** Push, create PR (labeled `autocode`, `ci-fix`), log success to `ci_patterns.json`.
+
+**6. If fix fails:** Attempt 2 (different approach based on CI patterns). Up to `manifest.ci.max_fix_attempts` total attempts (default: 2).
+
+#### 6b-5. Fix Failed — Revert
+
+If all fix attempts fail, OR if the failure category is `env_error` or `unknown`, OR if `manifest.ci.auto_fix` is false:
 
 1. Create revert branch and revert the merge commit
 2. Create revert PR with `autocode` and `revert` labels
 3. Log the regression to failures.md with `CI_REGRESSION` tag
-4. Downgrade difficulty by 1 (minimum 1)
-5. Reset consecutive success streak to 0
+4. Store the failure pattern in `ci_patterns.json` for future reference
+5. Downgrade difficulty by 1 (minimum 1)
+6. Reset consecutive success streak to 0
 
-#### 6b-4. CI Timeout
+#### 6b-6. CI Timeout
 If CI hasn't completed after 10 minutes, log a warning and proceed.
 
 ### Step 7: Update Memory
@@ -454,6 +671,16 @@ After each cycle, update the memory files:
 **`.autocode/memory/coverage.md`**: Update per-file coverage tracking (same as before — measured deltas when available, N/A otherwise).
 
 **Update manifest gaps**: If real coverage data was collected, update the manifest's gaps array (same as before).
+
+**Update plan status** (if the work item came from a plan):
+- On SUCCESS: Read `.autocode/plans/<plan_id>.json`, update the step's `status` to `"completed"`, record the `pr` URL
+- On FAILURE: Update the step's `status` to `"failed"` — this does NOT block unrelated steps, only steps that have the failed step in their `blocked_by` array
+- If ALL steps in the plan are `"completed"`: Update the plan's `status` to `"completed"`
+- If a step fails and blocks downstream steps: Log a warning: "Plan step '<step_title>' failed — <N> downstream steps are now blocked"
+
+**Update daemon state** (if running in daemon mode):
+- Write `.autocode/daemon_state.json` with current run stats (last_run timestamp, result, cycle count, PR list, today's spending)
+- The daemon state is read at the start of the next daemon run for budget checks
 
 **`.autocode/memory/failures.md`** (on failure): Append with work type info:
 ```
@@ -479,6 +706,92 @@ After each cycle, update the memory files:
 
 **`.autocode/memory/lessons.md`**: Same as before (extract lessons on success, failure, and reviewer reject).
 
+**`.autocode/memory/patterns.json`** (if `manifest.brain.pattern_database` is true):
+
+On each cycle, extract structured patterns from the result:
+
+- **On SUCCESS**: Create or update a pattern entry:
+  ```json
+  {
+    "id": "p_<auto_increment>",
+    "category": "<infer: test_approach | mock_strategy | error_fix>",
+    "description": "<what approach worked>",
+    "tags": ["<language>", "<framework>", "<test_runner>"],
+    "success_count": 1,
+    "failure_count": 0,
+    "last_used": "<timestamp>",
+    "created": "<timestamp>",
+    "source": "cycle_success",
+    "file_types": ["<target file type>"],
+    "work_types": ["<work_type>"]
+  }
+  ```
+  If a similar pattern already exists (matching `description` and `category`), increment `success_count` and update `last_used` instead of creating a new entry.
+
+- **On FAILURE**: Same as above but increment `failure_count` and set `source` to `cycle_failure`.
+
+- **On REVIEWER REJECT**: Create a `review_pattern` category entry with the Reviewer's feedback as the description.
+
+**Prune stale patterns**: After updating, remove any patterns where `last_used` is older than `manifest.brain.pattern_retention_days` (default: 90 days).
+
+**`.autocode/memory/ci_patterns.json`** (if CI fix was attempted in Step 6b):
+
+Log the CI fix result:
+```json
+{
+  "id": "ci_<auto_increment>",
+  "category": "<failure category>",
+  "error_signature": "<key error string>",
+  "error_file": "<file that caused the error>",
+  "fix_applied": "<description of fix>",
+  "fix_worked": true,
+  "timestamp": "<timestamp>",
+  "run_id": "<CI run ID>"
+}
+```
+
+Update `stats`: increment `total_failures`, and increment either `auto_fixed` or `reverted`. Recalculate `fix_rate` as `auto_fixed / total_failures`.
+
+**`.autocode/memory/knowledge.json`** (if `manifest.brain.knowledge_graph` is true):
+
+Merge any knowledge graph updates returned by the Scout into the persistent file. For each file entry, overwrite the existing entry with the Scout's updated data. Update `last_updated` to the current timestamp.
+
+### Step 7b: Ingest Human Feedback
+
+**Skip if** `manifest.brain.human_feedback` is false.
+
+After Step 7 (memory update), check for human feedback on past AutoCode PRs:
+
+**1. Check feedback log:**
+Read `.autocode/memory/feedback_log.json`. Note which PR numbers have already been ingested.
+
+**2. Find recently merged/closed AutoCode PRs with human comments:**
+```bash
+# Merged PRs
+gh pr list --label "autocode" --state merged --json number,comments,mergedAt --limit 5
+# Closed (not merged) PRs
+gh pr list --label "autocode" --state closed --json number,comments,closedAt --limit 5
+```
+
+**3. For each PR not in `ingested_prs`:**
+
+a. Read the PR comments:
+```bash
+gh api repos/{owner}/{repo}/pulls/{number}/comments
+```
+
+b. Filter out bot comments (from `autocode`, `github-actions`, `devin-ai-integration`). Extract substantive human review comments.
+
+c. Create patterns from the feedback:
+- **Merged PR with positive comments** → `human_feedback` pattern with `success_count: 3` (high initial weight)
+- **Merged PR with "nit" comments** → `review_pattern` with the nit as a caution, `success_count: 1, failure_count: 1`
+- **Closed PR (not merged)** → `human_feedback` pattern with `failure_count: 3` (high initial failure weight)
+
+d. Add patterns to `.autocode/memory/patterns.json`.
+
+**4. Update feedback log:**
+Add the ingested PR numbers to `ingested_prs` and update `last_check` timestamp in `.autocode/memory/feedback_log.json`.
+
 ### Step 8: Clean Up Worktree
 
 ```bash
@@ -488,6 +801,24 @@ git worktree remove .autocode/worktrees/$BRANCH_NAME --force
 ### Step 9: Check Stop Conditions
 
 Before starting the next cycle, check these conditions in order:
+
+#### 9a-prime. Session Budget Check
+Check the session budget:
+- If `session_spent >= session_budget` → stop with:
+  ```
+  Session budget reached ($<session_spent> / $<session_budget>)
+  Cycles completed: <N>
+  PRs created: <count>
+  ```
+- If `session_spent >= session_budget * (warn_at_percent / 100)` → warn:
+  ```
+  ⚠  Budget warning: $<session_spent> / $<session_budget> (<percent>% used)
+  ```
+
+#### 9a-double-prime. Daily Budget Check (Daemon Mode)
+If `manifest.daemon.enabled` is true and running in daemon mode:
+- Read `.autocode/memory/costs.md` and sum today's spending
+- If today's total >= `manifest.daemon.daily_budget_usd` → stop with: "Daily budget reached ($<spent> / $<budget>)"
 
 #### 9a. Stop Signal
 Does `.autocode/STOP` file exist? If yes, stop gracefully.
@@ -546,21 +877,19 @@ Same as before — after every 10 successful cycles, refresh coverage data from 
 
 ## Cycle Summary
 
-After each cycle, print a brief summary:
+After each cycle, update `session_spent` with the cycle's estimated cost, then print a visual summary:
 
 ```
-Cycle <N> complete:
-  Target: <file>
-  Type: <work_type> (from <source>)
-  Result: <SUCCESS|FAILURE>
-  Agents: Scout → [Architect →] Builder → [Tester →] Reviewer
-  Review: <APPROVED | APPROVED (after retry) | REJECTED (2x, abandoned)>
-  Coverage: <file>: <X>% → <Y>% (+<Z>%) | Overall: <A>% → <B>% (+<C>%) | or "N/A"
-  PR: <URL or N/A>
-  Cost: ~$<estimated cycle cost>
-  Duration: <seconds>
-  Level: <current difficulty level>
-  Streak: <consecutive successes>
+  ┌─ Cycle <N> ────────────────────────────┐
+  │ Target:   <file>                        │
+  │ Type:     <work_type> (from <source>)   │
+  │ Pipeline: <agents used with models>     │
+  │ Result:   ✓ APPROVED / ✗ REJECTED       │
+  │ Coverage: <X>% → <Y>% (+<Z>%)          │
+  │ PR:       #<number>                     │
+  │ Cost:     ~$<cycle> ($<total> total)    │
+  │ Budget:   $<remaining> remaining        │
+  └─────────────────────────────────────────┘
 ```
 
 ## Parallel Mode

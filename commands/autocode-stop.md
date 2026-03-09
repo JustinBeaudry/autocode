@@ -2,6 +2,16 @@
 
 Gracefully stop the AutoCode factory.
 
+## Output Format
+
+Start with the branded header:
+```
+  ┌─────────────────────────────────────┐
+  │  AutoCode — Stop                    │
+  │  <repo name> · v4.1                 │
+  └─────────────────────────────────────┘
+```
+
 ## Steps
 
 ### 1. Create Stop Signal

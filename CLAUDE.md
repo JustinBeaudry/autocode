@@ -13,10 +13,15 @@ Your repo's engineering department. Features, bugs, coverage, refactoring — fr
 ## Key Concepts
 
 - **Manifest**: `autocode.manifest.json` is generated per-repo by `/autocode-bootstrap`. It's the immutable contract agents run against.
-- **Work Queue**: Multiple sources feed into a unified, prioritized work queue: focus overrides, GitHub Issues, coverage gaps, backlog tasks, PR review feedback, and tech debt signals.
+- **Work Queue**: Multiple sources feed into a unified, prioritized work queue: focus overrides, multi-PR plans, GitHub Issues, coverage gaps, backlog tasks, PR review feedback, proactive discovery, and tech debt signals.
 - **Work Types**: Each work item has a type (`coverage`, `feature`, `bugfix`, `refactor`, `docs`, `dependency`, `review_response`) that determines pipeline routing — which agents are spawned and skipped.
-- **Agents are constrained**: Scout reads only, Architect writes specs only, Builder writes source only, Tester writes tests only, Reviewer writes nothing. All agents receive lessons from previous cycles.
-- **Memory**: Per-repo memory in `.autocode/memory/` prevents retry loops and accumulates lessons.
+- **Agents are constrained**: Scout reads only, Architect writes specs only, Planner decomposes tasks (read-only), Builder writes source only (+ `ci_fix` for CI failures), Tester writes tests only, Reviewer writes nothing, Discoverer finds work (read-only). All agents receive patterns from the pattern database.
+- **Multi-PR Planning**: The Planner agent decomposes large tasks into dependency graphs of atomic PRs. Plans are stored in `.autocode/plans/` and steps are ingested as high-priority work items.
+- **Daemon Mode**: Run AutoCode on a schedule via GitHub Actions with budget controls. `/autocode-daemon setup` generates the workflow.
+- **Proactive Discovery**: The Discoverer agent finds untested commits, complexity hotspots, vulnerable dependencies, and stale TODOs. Runs once per session when enabled.
+- **Persistent Brain**: Knowledge graph (`knowledge.json`) caches codebase analysis. Pattern database (`patterns.json`) replaces unstructured lessons with weighted, scored patterns. Human feedback loop extracts patterns from PR reviews.
+- **CI-Aware Shipping**: On CI failure after merge, reads logs → categorizes failure → attempts fix before reverting. Tracks CI patterns in `ci_patterns.json`.
+- **Memory**: Per-repo memory in `.autocode/memory/` prevents retry loops and accumulates structured knowledge.
 - **Progressive difficulty**: Levels 1-6, auto-advances after 3 consecutive successes. Higher levels unlock more work types (L1-2: coverage only, L3+: bugs, L5+: features).
 
 ## Commands
@@ -30,6 +35,9 @@ Your repo's engineering department. Features, bugs, coverage, refactoring — fr
 | `/autocode-report` | Generate a shareable summary |
 | `/autocode-focus` | Manage the priority work queue |
 | `/autocode-next` | Preview the next cycle (dry run) |
+| `/autocode-plan` | Decompose large tasks into multi-PR plans |
+| `/autocode-daemon` | Manage daemon mode (setup, status, pause, resume) |
+| `/autocode-discover` | Run proactive codebase discovery |
 
 ## Development
 

@@ -23,6 +23,71 @@ You receive a work item from the orchestrator:
 - `manifest`: The autocode.manifest.json contents
 - `failures_memory`: Previous failures related to this file (if any)
 
+## Knowledge Graph
+
+Before analyzing any file, check the knowledge graph at `.autocode/memory/knowledge.json`. This is a persistent cache of codebase knowledge that survives across sessions.
+
+### Cache Check
+
+For each target file (and its key dependencies):
+
+1. Read `.autocode/memory/knowledge.json`
+2. Look up the file in `files[<path>]`
+3. Get the current file's SHA: `git log -1 --format="%h" -- <file_path>`
+4. If the entry exists AND `last_modified_sha` matches the current SHA → **cache hit**, use the cached data
+5. If the entry is missing or the SHA differs → **cache miss**, do full analysis
+
+On a cache hit, you still gather context (dependents, test patterns, failures) but skip re-reading the file's exports, imports, and structure — use the cached values instead.
+
+### Cache Update
+
+After analyzing a file (cache miss), prepare an update entry for the knowledge graph:
+
+```json
+{
+  "file_path": {
+    "exports": ["list", "of", "exports"],
+    "imports": ["./types", "fs", "path"],
+    "type": "utility",
+    "complexity": "medium",
+    "lines": 142,
+    "test_file": "path/to/test.file",
+    "coverage": 45,
+    "last_analyzed": "ISO timestamp",
+    "last_modified_sha": "abc123"
+  }
+}
+```
+
+Also update module-level groupings in `modules`:
+
+```json
+{
+  "directory/": {
+    "files": ["file1.ts", "file2.ts"],
+    "type": "utility_module",
+    "internal_deps": ["other/dir/"],
+    "dependents": ["consuming/dir/"]
+  }
+}
+```
+
+Return the updated entries in your output under `## Knowledge Graph Updates` so the orchestrator can merge them into `knowledge.json`.
+
+### Graph Context Output
+
+When the knowledge graph has data for the target's module or dependencies, include it in your output:
+
+```
+## Knowledge Graph Context
+- Module: <directory> (<N> files, type: <module_type>)
+- Internal dependencies: <list of dependent modules with their types>
+- Dependents: <list of consuming modules>
+- Cache status: <N> hits, <N> misses
+```
+
+This context is passed to the Architect and Builder for better decision-making.
+
 ## Task
 
 Gather comprehensive context about the target file so the Builder (or Architect) can work effectively:
@@ -67,6 +132,15 @@ Return a structured context report as plain text:
 - Style: <describe assertion style, describe vs test, etc>
 - Mocking: <how mocks are done in this project>
 - Example test file: <path used as reference>
+
+## Knowledge Graph Context (if available)
+- Module: <directory> (<N> files, type: <module_type>)
+- Internal dependencies: <list>
+- Dependents: <list>
+- Cache status: <N> hits, <N> misses
+
+## Knowledge Graph Updates
+<JSON entries to merge into knowledge.json — only for cache misses>
 
 ## Previous Failures (if any)
 - <description of what was tried and why it failed>

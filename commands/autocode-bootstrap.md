@@ -2,6 +2,27 @@
 
 You are the AutoCode Infra Agent. Your job is to analyze the current repository and generate an `autocode.manifest.json` that serves as the immutable contract for all AutoCode agents.
 
+## Output Format
+
+Start with the branded header:
+```
+  ┌─────────────────────────────────────┐
+  │  AutoCode — Bootstrap               │
+  │  Analyzing repository...            │
+  └─────────────────────────────────────┘
+```
+
+If this is the user's first time using AutoCode (no manifest exists), show a welcome:
+```
+  Welcome to AutoCode! This command will:
+  1. Detect your language, framework, and test infrastructure
+  2. Measure current coverage and identify gaps
+  3. Generate a manifest contract for the factory agents
+  4. Set up the memory directory
+
+  Let's get started.
+```
+
 ## Steps
 
 ### 1. Detect Language and Framework
@@ -262,6 +283,51 @@ Assemble the `autocode.manifest.json` with all detected values. Use sensible def
     "tester": "sonnet",
     "reviewer": "opus"
   },
+  "brain": {
+    "knowledge_graph": true,
+    "pattern_database": true,
+    "human_feedback": true,
+    "pattern_retention_days": 90
+  },
+  "ci": {
+    "auto_fix": true,
+    "max_fix_attempts": 2,
+    "fixable_categories": ["test_failure", "type_error", "lint_error", "build_error"]
+  },
+  "planning": {
+    "enabled": true,
+    "max_steps_per_plan": 10,
+    "auto_plan_issues": false
+  },
+  "budget": {
+    "session_max_usd": 5.00,
+    "cycle_max_usd": 2.00,
+    "warn_at_percent": 80
+  },
+  "daemon": {
+    "enabled": false,
+    "schedule": "0 */6 * * *",
+    "max_cycles_per_run": 5,
+    "daily_budget_usd": 10.00,
+    "deploy_windows": [],
+    "notifications": {
+      "on_failure": "github_issue",
+      "on_success": "none",
+      "on_budget_exceeded": "github_issue"
+    }
+  },
+  "discovery": {
+    "enabled": false,
+    "modules": {
+      "untested_changes": true,
+      "complexity_hotspots": true,
+      "dependency_audit": true,
+      "stale_todos": true
+    },
+    "complexity_threshold_lines": 300,
+    "todo_age_days": 30,
+    "max_items_per_module": 5
+  },
   "work_sources": {
     "coverage_gaps": true,
     "github_issues": {
@@ -317,6 +383,10 @@ Also create the `.autocode/memory/` directory with seeded memory files (not empt
 - `.autocode/memory/coverage.md` — header + "No coverage data yet."
 - `.autocode/memory/lessons.md` — header + "No lessons yet."
 - `.autocode/memory/costs.md` — header + "No cost data yet."
+- `.autocode/memory/knowledge.json` — `{"version": 1, "last_updated": null, "files": {}, "modules": {}}`
+- `.autocode/memory/patterns.json` — `{"version": 1, "patterns": []}`
+- `.autocode/memory/ci_patterns.json` — `{"version": 1, "patterns": [], "stats": {"total_failures": 0, "auto_fixed": 0, "reverted": 0, "fix_rate": 0}}`
+- `.autocode/memory/feedback_log.json` — `{"ingested_prs": [], "last_check": null}`
 
 Add `.autocode/` and `autocode.manifest.json` to `.gitignore` if not already present.
 

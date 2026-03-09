@@ -2,6 +2,16 @@
 
 Display the current status of the AutoCode factory for this repository.
 
+## Output Format
+
+Start with the branded header:
+```
+  ┌─────────────────────────────────────┐
+  │  AutoCode — Status                  │
+  │  <repo name> · Level <N> · v4.1     │
+  └─────────────────────────────────────┘
+```
+
 ## Steps
 
 ### 1. Check Manifest
@@ -72,7 +82,7 @@ Factory:     <RUNNING | STOPPED | IDLE>
 Level:       <N> — <description>
 Streak:      <N> consecutive successes
 
-Cycles:      <total> total (<successes> success, <failures> failed)
+Cycles:      <total> total (<successes> ✓, <failures> ✗)
 Success Rate: <X>%
 PRs Created: <N> (<open> open, <merged> merged)
 
@@ -80,10 +90,12 @@ Coverage:    <start>% → <current>% (+<delta>%)
 Best Cycle:  +<N>% on <file>
 Avg Time:    <N>s per cycle
 
-Cost:        ~$<total> estimated total
-Per PR:      ~$<cost_per_pr> per successful PR
-Per Cov Pt:  ~$<cost_per_point> per coverage percentage point
-Trend:       <cheaper | stable | more expensive> (last 5 cycles)
+Budget:
+  Session:   $<spent> / $<session_max> (<percent>%)
+  Daily:     $<today_spent> / $<daily_budget> (<percent>%)
+  Per PR:    ~$<cost_per_pr>
+  Per Cov Pt: ~$<cost_per_point>
+  Trend:     <cheaper | stable | more expensive> (last 5 cycles)
 
 Top Coverage Gaps Remaining:
   1. <file> — <X>% coverage
@@ -91,9 +103,9 @@ Top Coverage Gaps Remaining:
   3. <file> — <X>% coverage
 
 Recent Cycles:
-  <timestamp> — <file> — <SUCCESS|FAILURE> — <PR URL or reason>
-  <timestamp> — <file> — <SUCCESS|FAILURE> — <PR URL or reason>
-  <timestamp> — <file> — <SUCCESS|FAILURE> — <PR URL or reason>
+  <timestamp> — <file> — ✓/<✗> — <PR URL or reason>
+  <timestamp> — <file> — ✓/<✗> — <PR URL or reason>
+  <timestamp> — <file> — ✓/<✗> — <PR URL or reason>
 
 Most-Failed:  <file> (<N> attempts)
 ```

@@ -2,7 +2,7 @@
 
 ## Overview
 
-AutoCode uses 5 specialized agents, each with strict constraints on what they can read and write. This constraint system is the core quality mechanism — agents can't step on each other's toes.
+AutoCode uses 7 specialized agents, each with strict constraints on what they can read and write. This constraint system is the core quality mechanism — agents can't step on each other's toes.
 
 All agents reference manifest values directly (e.g., `manifest.commands.coverage`, `manifest.guardrails.immutable_patterns`) rather than using placeholder syntax like `{{variable}}`. This prevents template injection issues and makes prompts self-documenting.
 
@@ -21,15 +21,20 @@ All agents reference manifest values directly (e.g., `manifest.commands.coverage
 - Work item (type, description, target files, source)
 - Manifest contents
 - Previous failure memory
+- Knowledge graph (`.autocode/memory/knowledge.json`) — for cache checks
 
 **Output**: Structured context report including:
-- File analysis (exports, functions, classes)
+- File analysis (exports, functions, classes) — from cache or fresh analysis
 - Existing test coverage
 - Dependency graph
 - Project testing patterns
 - Previous failure notes
 - Work item context (type, source, scope, related files)
+- Knowledge graph context (module groupings, dependency relationships)
+- Knowledge graph updates (new/updated file entries for the orchestrator to merge)
 - Recommendations
+
+**Knowledge Graph Integration**: Before analyzing any file, the Scout checks `knowledge.json` for cached data. If the file's SHA hasn't changed since last analysis (cache hit), it skips re-reading the file's structure and uses cached exports, imports, type, and complexity. On cache miss, it does full analysis and returns updated entries for the orchestrator to merge.
 
 **Model**: Sonnet (default via `manifest.model_routing.scout`). Note: avoid Haiku — it fails on repos with many MCP tools due to schema size limits. Sonnet is the safe default.
 
@@ -112,6 +117,7 @@ All agents reference manifest values directly (e.g., `manifest.commands.coverage
 - `docs`: Documentation only, no source changes
 - `dependency`: Update versions, fix breaking changes
 - `review_response`: Address review comments, commit as fixups
+- `ci_fix`: Fix CI failures with minimal changes — read error output, fix the source, don't refactor
 
 **On Reviewer rejection**: Gets one retry with structured feedback. The retry prompt includes the original task, previous implementation summary, and the Reviewer's specific feedback. The Builder works in the same worktree (not a new one).
 
@@ -192,12 +198,78 @@ All agents reference manifest values directly (e.g., `manifest.commands.coverage
 
 **Time budget**: 300 seconds (default)
 
+### Planner
+
+**Role**: Task decomposer — takes a large task and produces a dependency graph of atomic PRs.
+
+**File**: `agents/planner.md`
+
+**Can use**: Read, Glob, Grep, Bash (read-only commands)
+**Cannot use**: Write, Edit, NotebookEdit
+
+**Input**:
+- Task description (from GitHub Issue body, focus item, or user prompt)
+- Manifest contents
+- Knowledge graph (`.autocode/memory/knowledge.json`)
+- Pattern database (top relevant patterns from `.autocode/memory/patterns.json`)
+
+**Output**: Structured plan JSON with:
+- Plan metadata (id, title, source, reference)
+- Steps array with dependency graph (`blocked_by` relationships)
+- Each step specifies: work_type, target_files, description, acceptance criteria
+
+**Quality rules**:
+- Each step must be independently shippable and testable
+- Each step must be within the guardrails (max files per PR, max lines)
+- Steps ordered from foundational (types, interfaces) to dependent (implementations, tests)
+- No circular dependencies
+- Total steps <= `manifest.planning.max_steps_per_plan`
+
+**Model**: Sonnet (default via `manifest.model_routing.architect`)
+
+**Invoked by**: `/autocode-plan` command
+
+---
+
+### Discoverer
+
+**Role**: Proactive codebase analyst — finds work that needs doing without being told.
+
+**File**: `agents/discoverer.md`
+
+**Can use**: Read, Glob, Grep, Bash (read-only commands like `git log`, `git blame`, `npm audit`, `pip-audit`, `cargo audit`)
+**Cannot use**: Write, Edit, NotebookEdit
+
+**Input**:
+- Manifest contents
+- Discovery configuration (`manifest.discovery`)
+- Summary of existing work queue items (for deduplication)
+- Previous discovery items (`.autocode/discovery.json`)
+
+**Output**: JSON result with discovered work items, each containing:
+- Work type, priority, target files, description, source module, reference
+
+**Discovery modules**:
+- **Untested Changes**: Detects recent commits that modified code without corresponding tests
+- **Complexity Hotspots**: Finds files above the complexity threshold with high change frequency
+- **Dependency Audit**: Checks for known vulnerabilities via `npm audit`, `pip-audit`, `cargo audit`, or `govulncheck`
+- **Stale TODOs**: Finds TODO/FIXME/HACK/XXX comments older than the configured threshold
+
+**Deduplication**: Skips items whose target files are already in the work queue from another source.
+
+**Model**: Sonnet (default via `manifest.model_routing.scout`)
+
+**Invoked by**: `/autocode-discover` command, or automatically at session start when `manifest.discovery.enabled` is true
+
+---
+
 ## Agent Communication Flow
 
 ```
 Orchestrator
     |
-    |--- [Build work queue (focus, issues, gaps, backlog, reviews, tech debt)]
+    |--- [Run Discovery (if enabled, once per session)]
+    |--- [Build work queue (focus, plans, issues, gaps, backlog, discovery, reviews, tech debt)]
     |--- [Prioritize and select work item]
     |--- [Route: configure pipeline per work type]
     |
@@ -225,7 +297,13 @@ Orchestrator
     |         |
     |         |--- HARD REJECT --> Abandon immediately
     |
-    |--- [Update memory: velocity, coverage, fixes/failures, lessons, costs]
+    |--- [Update memory: velocity, coverage, fixes/failures, lessons, costs, patterns, knowledge graph]
+    |
+    |--- [Update plan status (if work item came from a plan)]
+    |
+    |--- [Update daemon state (if running in daemon mode)]
+    |
+    |--- [Ingest human feedback from merged/closed PRs (Step 7b)]
     |
     |--- [Clean up worktree]
     |
@@ -233,4 +311,6 @@ Orchestrator
   Check stop conditions --> next cycle or stop
 ```
 
-Each agent receives the output of the previous agent in the chain. The Orchestrator manages the handoffs and handles failures at each stage. Lesson memory is injected into Builder prompts (the 5 most recent relevant lessons, matched by file type and testing patterns).
+Each agent receives the output of the previous agent in the chain. The Orchestrator manages the handoffs and handles failures at each stage. Pattern memory is injected into Builder prompts (the top 5 patterns by score from patterns.json, matched by file type, work type, and language). Knowledge graph context from the Scout is also passed to downstream agents for better decision-making.
+
+The Planner and Discoverer agents operate outside the main pipeline — the Planner is invoked by `/autocode-plan` to decompose tasks, and the Discoverer runs at session start (when enabled) to find new work items.

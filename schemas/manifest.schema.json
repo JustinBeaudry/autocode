@@ -262,6 +262,218 @@
         }
       }
     },
+    "brain": {
+      "type": ["object", "null"],
+      "description": "Persistent brain configuration — controls knowledge graph, pattern database, and human feedback learning",
+      "properties": {
+        "knowledge_graph": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable persistent codebase knowledge graph (.autocode/memory/knowledge.json). Scout caches file analysis across sessions."
+        },
+        "pattern_database": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable structured pattern database (.autocode/memory/patterns.json). Replaces unstructured lesson scanning with weighted, indexed patterns."
+        },
+        "human_feedback": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable human feedback ingestion. Extracts patterns from human PR reviews on merged/closed AutoCode PRs."
+        },
+        "pattern_retention_days": {
+          "type": "integer",
+          "default": 90,
+          "minimum": 7,
+          "description": "How long patterns are retained before being pruned. Older patterns receive lower weight in retrieval."
+        }
+      }
+    },
+    "ci": {
+      "type": ["object", "null"],
+      "description": "CI-aware shipping configuration — controls auto-fix behavior when CI fails after merge",
+      "properties": {
+        "auto_fix": {
+          "type": "boolean",
+          "default": true,
+          "description": "When CI fails after merge, attempt to fix the failure before reverting. If false, reverts immediately (v2 behavior)."
+        },
+        "max_fix_attempts": {
+          "type": "integer",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Maximum number of fix attempts before falling back to revert."
+        },
+        "fixable_categories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["test_failure", "type_error", "lint_error", "build_error"]
+          },
+          "default": ["test_failure", "type_error", "lint_error", "build_error"],
+          "description": "CI failure categories that AutoCode will attempt to fix. Categories not listed here trigger immediate revert."
+        }
+      }
+    },
+    "planning": {
+      "type": ["object", "null"],
+      "description": "Multi-PR planning configuration — decompose large tasks into dependency graphs of atomic PRs",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether multi-PR planning is active"
+        },
+        "max_steps_per_plan": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 2,
+          "maximum": 20,
+          "description": "Maximum steps in a single plan (prevents over-decomposition)"
+        },
+        "auto_plan_issues": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, large GitHub Issues (body > 500 chars with multiple file paths) are automatically decomposed by the Planner instead of treated as single work items"
+        }
+      }
+    },
+    "daemon": {
+      "type": ["object", "null"],
+      "description": "Daemon mode configuration — run AutoCode on a schedule via GitHub Actions with budget controls",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether daemon mode is active"
+        },
+        "schedule": {
+          "type": "string",
+          "default": "0 */6 * * *",
+          "description": "Cron expression for when to run (default: every 6 hours)"
+        },
+        "max_cycles_per_run": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Hard limit on cycles per daemon invocation"
+        },
+        "daily_budget_usd": {
+          "type": "number",
+          "default": 10.00,
+          "minimum": 1.00,
+          "description": "Stop if today's estimated spend exceeds this amount"
+        },
+        "deploy_windows": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Array of cron expressions during which AutoCode should NOT run (e.g., deploy windows)"
+        },
+        "notifications": {
+          "type": "object",
+          "properties": {
+            "on_failure": {
+              "type": "string",
+              "enum": ["github_issue", "pr_comment", "none"],
+              "default": "github_issue"
+            },
+            "on_success": {
+              "type": "string",
+              "enum": ["github_issue", "pr_comment", "none"],
+              "default": "none"
+            },
+            "on_budget_exceeded": {
+              "type": "string",
+              "enum": ["github_issue", "pr_comment", "none"],
+              "default": "github_issue"
+            }
+          }
+        }
+      }
+    },
+    "discovery": {
+      "type": ["object", "null"],
+      "description": "Proactive discovery configuration — find work that needs doing without being told",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Master switch for proactive discovery (runs once per session or daemon run)"
+        },
+        "modules": {
+          "type": "object",
+          "properties": {
+            "untested_changes": {
+              "type": "boolean",
+              "default": true,
+              "description": "Detect recent commits that modified code without corresponding tests"
+            },
+            "complexity_hotspots": {
+              "type": "boolean",
+              "default": true,
+              "description": "Find files that have grown beyond complexity thresholds"
+            },
+            "dependency_audit": {
+              "type": "boolean",
+              "default": true,
+              "description": "Check for known vulnerabilities and outdated dependencies"
+            },
+            "stale_todos": {
+              "type": "boolean",
+              "default": true,
+              "description": "Find TODO/FIXME comments that have been open too long"
+            }
+          }
+        },
+        "complexity_threshold_lines": {
+          "type": "integer",
+          "default": 300,
+          "minimum": 100,
+          "description": "Files above this line count trigger refactor suggestions"
+        },
+        "todo_age_days": {
+          "type": "integer",
+          "default": 30,
+          "minimum": 7,
+          "description": "How old a TODO must be before it's flagged"
+        },
+        "max_items_per_module": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Cap on items each discovery module can create (prevents flooding)"
+        }
+      }
+    },
+    "budget": {
+      "type": ["object", "null"],
+      "description": "Cost control configuration — session caps, per-cycle caps, and budget-aware model downgrading",
+      "properties": {
+        "session_max_usd": {
+          "type": "number",
+          "default": 5.00,
+          "minimum": 0.50,
+          "description": "Hard cap for interactive sessions. Factory stops when estimated spend reaches this amount."
+        },
+        "cycle_max_usd": {
+          "type": "number",
+          "default": 2.00,
+          "minimum": 0.10,
+          "description": "Soft cap per cycle. When remaining budget is below this, Builder and Reviewer downgrade from Opus to Sonnet."
+        },
+        "warn_at_percent": {
+          "type": "integer",
+          "default": 80,
+          "minimum": 50,
+          "maximum": 99,
+          "description": "Show a budget warning when this percentage of session_max_usd is spent."
+        }
+      }
+    },
     "testing": {
       "type": ["object", "null"],
       "description": "Detected testing conventions for the project",

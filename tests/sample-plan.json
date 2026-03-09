@@ -1,0 +1,43 @@
+{
+  "id": "plan_sample_test",
+  "title": "Sample test plan for validation",
+  "source": "manual",
+  "reference": "test fixture",
+  "status": "pending",
+  "created": "2026-01-01T00:00:00Z",
+  "steps": [
+    {
+      "id": "step_1",
+      "title": "Define types and interfaces",
+      "work_type": "feature",
+      "target_files": ["src/types.ts"],
+      "description": "Create TypeScript interfaces for the new feature",
+      "acceptance_criteria": ["Types compile without errors", "Exported from index"],
+      "blocked_by": [],
+      "status": "pending",
+      "pr": null
+    },
+    {
+      "id": "step_2",
+      "title": "Implement core logic",
+      "work_type": "feature",
+      "target_files": ["src/core.ts"],
+      "description": "Implement the main business logic",
+      "acceptance_criteria": ["All tests pass", "Coverage > 80%"],
+      "blocked_by": ["step_1"],
+      "status": "pending",
+      "pr": null
+    },
+    {
+      "id": "step_3",
+      "title": "Add integration tests",
+      "work_type": "coverage",
+      "target_files": ["src/core.test.ts"],
+      "description": "Add integration tests for the new feature",
+      "acceptance_criteria": ["All edge cases covered"],
+      "blocked_by": ["step_2"],
+      "status": "pending",
+      "pr": null
+    }
+  ]
+}

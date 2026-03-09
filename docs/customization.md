@@ -103,6 +103,41 @@ Control the starting difficulty and progression:
 - After 3 consecutive failures, the factory drops back one level (minimum 1)
 - A CI regression (auto-revert) also downgrades difficulty by 1 level
 
+### Budget Controls
+
+Control cost limits and automatic model downgrading:
+
+```json
+{
+  "budget": {
+    "session_max_usd": 5.00,
+    "cycle_max_usd": 2.00,
+    "warn_at_percent": 80
+  }
+}
+```
+
+- **session_max_usd** (default: $5): Hard cap for interactive sessions. The factory stops when estimated spend reaches this amount. Set higher for longer runs.
+- **cycle_max_usd** (default: $2): Soft cap per cycle. When the remaining session budget drops below this amount, the Builder and Reviewer automatically downgrade from Opus to Sonnet to stretch the budget further.
+- **warn_at_percent** (default: 80): Show a budget warning when this percentage of the session budget is spent.
+
+**Budget-aware model routing**: When budget is tight, the orchestrator automatically switches expensive agents to cheaper models:
+- Builder: opus → sonnet (~70% cost reduction)
+- Reviewer: opus → sonnet (~70% cost reduction)
+- Other agents already use Sonnet by default
+
+**Cost estimation**:
+| Model | Estimated cost per agent spawn |
+|-------|-------------------------------|
+| haiku | ~$0.01 |
+| sonnet | ~$0.05-0.15 |
+| opus | ~$0.30-1.00 |
+
+Typical Level 1-2 cycle (Builder + Reviewer): ~$0.30-1.00
+Typical Level 3+ cycle (all agents): ~$1.50-3.00
+
+For daemon mode, use `daemon.daily_budget_usd` to control daily spending (see [Daemon Mode](#daemon-mode) below). The `--max-budget-usd` CLI flag provides an additional hard cap in CI.
+
 ### Model Routing
 
 Control which AI models each agent uses:
@@ -230,6 +265,123 @@ These values are auto-detected by `/autocode-bootstrap`. You can override them:
 - **structure**: How tests are organized (`describe/it`, `test()`, `#[test]`, `def test_`)
 - **helpers**: Paths to shared test utilities that agents should import
 
+### Persistent Brain
+
+Control the persistent brain features:
+
+```json
+{
+  "brain": {
+    "knowledge_graph": true,
+    "pattern_database": true,
+    "human_feedback": true,
+    "pattern_retention_days": 90
+  }
+}
+```
+
+- **knowledge_graph** (default: true): Caches codebase analysis across sessions in `.autocode/memory/knowledge.json`. The Scout skips re-analyzing files that haven't changed, saving ~30s per cached file.
+- **pattern_database** (default: true): Replaces unstructured lesson scanning with a weighted pattern database in `.autocode/memory/patterns.json`. Patterns are scored by success rate and recency, giving agents better guidance.
+- **human_feedback** (default: true): After each cycle, checks merged/closed AutoCode PRs for human review comments. Extracts patterns from human feedback to improve future cycles.
+- **pattern_retention_days** (default: 90): How long patterns are kept before pruning. Older patterns receive lower weight in scoring but are still used until pruned.
+
+To disable the brain entirely (v2 behavior), set all three booleans to false. The orchestrator will fall back to scanning `lessons.md` for unstructured lesson extraction.
+
+### CI-Aware Shipping
+
+Control how AutoCode handles CI failures after merge:
+
+```json
+{
+  "ci": {
+    "auto_fix": true,
+    "max_fix_attempts": 2,
+    "fixable_categories": ["test_failure", "type_error", "lint_error", "build_error"]
+  }
+}
+```
+
+- **auto_fix** (default: true): When CI fails after merge, attempt to read logs, categorize the failure, and fix it before reverting. Set to false for v2 behavior (immediate revert).
+- **max_fix_attempts** (default: 2): Maximum fix attempts before falling back to revert. Each attempt uses a different approach based on CI pattern history.
+- **fixable_categories** (default: all four): Which CI failure types to attempt fixing. Remove categories to narrow the scope. `env_error` and `unknown` always trigger revert regardless of this setting.
+
+CI fix patterns are tracked in `.autocode/memory/ci_patterns.json` with stats on fix rate, enabling continuous improvement of the auto-fix system.
+
+### Multi-PR Planning
+
+Control how large tasks are decomposed:
+
+```json
+{
+  "planning": {
+    "enabled": true,
+    "max_steps_per_plan": 10,
+    "auto_plan_issues": false
+  }
+}
+```
+
+- **enabled** (default: true): Whether multi-PR planning is active. When true, `/autocode-plan` is available and plan steps are ingested as work items.
+- **max_steps_per_plan** (default: 10): Maximum steps in a single plan. Prevents over-decomposition of tasks. Range: 2-20.
+- **auto_plan_issues** (default: false): When true, large GitHub Issues (body > 500 chars with multiple file paths mentioned) are automatically decomposed by the Planner agent instead of treated as single work items.
+
+### Daemon Mode
+
+Control unattended operation via GitHub Actions:
+
+```json
+{
+  "daemon": {
+    "enabled": false,
+    "schedule": "0 */6 * * *",
+    "max_cycles_per_run": 5,
+    "daily_budget_usd": 10.00,
+    "deploy_windows": [],
+    "notifications": {
+      "on_failure": "github_issue",
+      "on_success": "none",
+      "on_budget_exceeded": "github_issue"
+    }
+  }
+}
+```
+
+- **enabled** (default: false): Whether the daemon workflow is active. Use `/autocode-daemon setup` to configure.
+- **schedule** (default: `0 */6 * * *`): Cron expression for when to run. Default is every 6 hours.
+- **max_cycles_per_run** (default: 5): Hard limit on cycles per daemon invocation. Higher = more work per run but longer CI time.
+- **daily_budget_usd** (default: $10): Stop if today's estimated spend exceeds this. Can be overridden by the `AUTOCODE_DAILY_BUDGET` repository variable.
+- **deploy_windows**: Array of cron expressions during which AutoCode should NOT run (e.g., `["0 14 * * 1-5"]` = no shipping during 2pm weekday deploys).
+- **notifications**: What to do on events — `github_issue`, `pr_comment`, or `none`.
+
+### Proactive Discovery
+
+Control automatic work discovery:
+
+```json
+{
+  "discovery": {
+    "enabled": false,
+    "modules": {
+      "untested_changes": true,
+      "complexity_hotspots": true,
+      "dependency_audit": true,
+      "stale_todos": true
+    },
+    "complexity_threshold_lines": 300,
+    "todo_age_days": 30,
+    "max_items_per_module": 5
+  }
+}
+```
+
+- **enabled** (default: false): Master switch. When true, discovery runs once at session start (interactive) or once per daemon run.
+- **modules**: Toggle individual discovery modules on/off.
+- **complexity_threshold_lines** (default: 300): Files above this line count trigger refactor suggestions.
+- **todo_age_days** (default: 30): How old a TODO/FIXME must be before it's flagged.
+- **max_items_per_module** (default: 5): Cap on items each module can create. Prevents flooding the work queue.
+
+You can always run `/autocode-discover` manually regardless of the `enabled` setting — the manifest flag only controls automatic discovery at session start.
+
 ### Diminishing Returns Override
 
 By default, the factory stops when the last 5 successful coverage deltas are all < 0.5%. To override this:
@@ -291,8 +443,12 @@ AutoCode maintains these files in `.autocode/memory/`:
 | `failures.md` | Failed attempts with error details and attempt counts | On FAILURE or REJECT |
 | `velocity.md` | Cycle-by-cycle timing and results | Every cycle |
 | `coverage.md` | Per-file coverage progression (real measured deltas) | Every cycle with coverage data |
-| `lessons.md` | Patterns that work, anti-patterns that don't, review feedback | Every cycle |
+| `lessons.md` | Patterns that work, anti-patterns that don't (human-readable) | Every cycle |
 | `costs.md` | Per-cycle cost estimates and running totals | Every cycle |
+| `knowledge.json` | Persistent codebase knowledge graph (file analysis cache) | When Scout analyzes files |
+| `patterns.json` | Weighted pattern database (replaces lesson scanning) | Every cycle |
+| `ci_patterns.json` | CI failure patterns and fix history | On CI failure |
+| `feedback_log.json` | Tracks which PRs have had human feedback ingested | After Step 7b |
 
 ### Clearing Memory
 

@@ -2,6 +2,16 @@
 
 Generate a shareable markdown report of AutoCode's work on this repository.
 
+## Output Format
+
+Start with the branded header:
+```
+  ┌─────────────────────────────────────┐
+  │  AutoCode — Report                  │
+  │  <repo name> · v4.1                 │
+  └─────────────────────────────────────┘
+```
+
 ## Steps
 
 ### 1. Read Manifest

@@ -25,7 +25,7 @@ You receive from the orchestrator:
 
 ## Lessons
 
-The orchestrator may include lessons from previous cycles in your prompt. These are patterns that worked or failed in similar tasks. Follow them:
+The orchestrator may include patterns from the pattern database in your prompt. These are weighted, scored patterns that worked or failed in similar tasks. Follow them:
 
 - **SUCCESS patterns**: Replicate approaches that worked before (same mocking style, test structure, assertion patterns)
 - **FAILURE anti-patterns**: Avoid approaches that failed before — try a different strategy
@@ -109,6 +109,15 @@ When the orchestrator provides a `work_type` field, follow these type-specific g
 3. If a review comment is a style nit, note it as intentionally skipped
 4. Must-fix: bugs, errors, security issues, correctness problems
 5. May-skip: style preferences, naming suggestions, optional improvements
+
+#### `ci_fix`
+1. Read the CI error output carefully — understand exactly what failed
+2. Check if the error is in YOUR changes (from the original PR diff) or in existing code
+3. If in your changes: fix the source code to resolve the error
+4. If in existing code: this is not your fault — report FAILURE, do NOT modify unrelated code
+5. Run the test command to verify the fix works
+6. Keep the fix minimal — only change what's necessary to resolve the CI error
+7. Do NOT refactor, improve, or "clean up" surrounding code
 
 ## Output
 

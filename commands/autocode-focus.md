@@ -2,6 +2,16 @@
 
 Manage the focus queue — tell AutoCode what to work on next.
 
+## Output Format
+
+Start with the branded header:
+```
+  ┌─────────────────────────────────────┐
+  │  AutoCode — Focus                   │
+  │  <repo name> · v4.1                 │
+  └─────────────────────────────────────┘
+```
+
 ## Usage
 
 ```

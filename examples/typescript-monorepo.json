@@ -69,6 +69,51 @@
     "tester": "sonnet",
     "reviewer": "opus"
   },
+  "brain": {
+    "knowledge_graph": true,
+    "pattern_database": true,
+    "human_feedback": true,
+    "pattern_retention_days": 90
+  },
+  "ci": {
+    "auto_fix": true,
+    "max_fix_attempts": 2,
+    "fixable_categories": ["test_failure", "type_error", "lint_error", "build_error"]
+  },
+  "planning": {
+    "enabled": true,
+    "max_steps_per_plan": 10,
+    "auto_plan_issues": false
+  },
+  "daemon": {
+    "enabled": false,
+    "schedule": "0 */6 * * *",
+    "max_cycles_per_run": 5,
+    "daily_budget_usd": 10.00,
+    "deploy_windows": [],
+    "notifications": {
+      "on_failure": "github_issue",
+      "on_success": "none",
+      "on_budget_exceeded": "github_issue"
+    }
+  },
+  "discovery": {
+    "enabled": false,
+    "modules": {
+      "untested_changes": true,
+      "complexity_hotspots": true,
+      "dependency_audit": true,
+      "stale_todos": true
+    },
+    "complexity_threshold_lines": 300,
+    "todo_age_days": 30,
+    "max_items_per_module": 5
+  },
+  "budget": {
+    "session_max_usd": 5.00,
+    "cycle_max_usd": 2.00,
+    "warn_at_percent": 80
+  },
   "work_sources": {
     "coverage_gaps": true,
     "github_issues": { "enabled": false, "labels": ["autocode"], "exclude_labels": ["wontfix", "duplicate"] },

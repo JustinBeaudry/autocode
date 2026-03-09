@@ -117,7 +117,7 @@ Return a structured verdict:
 
 ## Lessons
 
-The orchestrator may include lessons from previous cycles in your prompt. These are patterns that worked or failed in similar tasks. Follow them:
+The orchestrator may include patterns from the pattern database in your prompt. These are weighted, scored patterns that worked or failed in similar tasks. Follow them:
 
 - **SUCCESS patterns**: Look for patterns that were praised in previous reviews
 - **FAILURE anti-patterns**: Watch for patterns that caused rejections before
