@@ -4,6 +4,8 @@
 
 AutoCode uses 5 specialized agents, each with strict constraints on what they can read and write. This constraint system is the core quality mechanism — agents can't step on each other's toes.
 
+All agents reference manifest values directly (e.g., `manifest.commands.coverage`, `manifest.guardrails.immutable_patterns`) rather than using placeholder syntax like `{{variable}}`. This prevents template injection issues and makes prompts self-documenting.
+
 ## Agent Details
 
 ### Scout
@@ -28,9 +30,9 @@ AutoCode uses 5 specialized agents, each with strict constraints on what they ca
 - Previous failure notes
 - Recommendations
 
-**Model**: Sonnet (Haiku may fail on repos with many MCP tools due to schema size limits)
+**Model**: Sonnet (default via `manifest.model_routing.scout`). Note: avoid Haiku — it fails on repos with many MCP tools due to schema size limits. Sonnet is the safe default.
 
-**Note**: At Level 1-2, the orchestrator skips spawning a separate Scout agent and gathers context inline — the Builder reads the same files anyway. Scout is spawned at Level 3+.
+**Skipped at Level 1-2**: The orchestrator gathers context inline instead of spawning a separate Scout agent. At these levels, the Builder reads the same files anyway, so spawning a Scout would waste ~30 seconds. Scout is spawned at Level 3+.
 
 **Time budget**: 180 seconds (default)
 
@@ -55,12 +57,14 @@ AutoCode uses 5 specialized agents, each with strict constraints on what they ca
 - Target functions to cover/modify
 - Approach description
 - Files to modify/create
-- Detailed test cases (input → expected output)
+- Detailed test cases (input -> expected output)
 - Mocking requirements
 - Acceptance criteria
 - Risks
 
-**Model**: Sonnet (mid-weight reasoning)
+**Model**: Sonnet (default via `manifest.model_routing.architect`)
+
+**Skipped at Level 1-2**: Simple coverage work doesn't need a spec. The Builder works from Scout context (or inline context) directly. Architect is spawned at Level 3+.
 
 **Time budget**: 180 seconds (default)
 
@@ -77,10 +81,12 @@ AutoCode uses 5 specialized agents, each with strict constraints on what they ca
 
 **Input**:
 - Target file path
-- Scout's context or Architect's spec
+- Inline Scout context (L1-2) or Architect's spec (L3+)
 - Manifest contents
 - Worktree path
 - Difficulty level
+- Failure context (if target has 1-2 previous failures — describes failed approaches to avoid)
+- Relevant lessons from `.autocode/memory/lessons.md` (matched by file type, test framework, module type)
 
 **Output**: Implementation result (SUCCESS/FAILURE) including:
 - Files changed with descriptions
@@ -95,7 +101,9 @@ AutoCode uses 5 specialized agents, each with strict constraints on what they ca
 - Cannot add new dependencies
 - Cannot exceed file/line change limits
 
-**Model**: Opus (complex judgment required)
+**On Reviewer rejection**: Gets one retry with structured feedback. The retry prompt includes the original task, previous implementation summary, and the Reviewer's specific feedback. The Builder works in the same worktree (not a new one).
+
+**Model**: Opus (default via `manifest.model_routing.builder`). Falls back to Sonnet if the specified model fails with an API error.
 
 **Time budget**: 600 seconds (default)
 
@@ -123,7 +131,9 @@ AutoCode uses 5 specialized agents, each with strict constraints on what they ca
 - Mutation testing results
 - Test output
 
-**Model**: Sonnet (test writing is structured)
+**Model**: Sonnet (default via `manifest.model_routing.tester`)
+
+**Skipped at Level 1-2 for pure functions**: The Builder already writes comprehensive tests for simple coverage work. Tester is spawned at Level 3+, or when the Builder made source code changes (not just test files).
 
 **Time budget**: 600 seconds (default)
 
@@ -143,7 +153,7 @@ AutoCode uses 5 specialized agents, each with strict constraints on what they ca
 - Manifest contents
 - Scout's context report
 - Builder's result
-- Tester's result
+- Tester's result (if applicable)
 
 **Output**: Verdict (APPROVE/REJECT) including:
 - Review checklist results (correctness, safety, scope, quality, test quality)
@@ -151,11 +161,14 @@ AutoCode uses 5 specialized agents, each with strict constraints on what they ca
 - Suggested PR title and body (if approved)
 
 **Rules**:
-- Hard reject if immutable files are modified
-- One retry allowed on soft rejection
+- Hard reject if immutable files are modified (no retry allowed, even during a retry attempt)
+- One retry allowed on soft rejection — Builder gets structured feedback
+- On second rejection, cycle is abandoned and both rejection reasons are logged
 - Feedback must be specific and actionable
 
-**Model**: Opus (quality judgment is critical)
+**On retry review**: The Reviewer receives a flag indicating this is a retry, along with the original feedback. It verifies that every item in the original feedback was addressed. Partial fixes result in a second REJECT.
+
+**Model**: Opus (default via `manifest.model_routing.reviewer`)
 
 **Time budget**: 300 seconds (default)
 
@@ -163,21 +176,42 @@ AutoCode uses 5 specialized agents, each with strict constraints on what they ca
 
 ```
 Orchestrator
-    │
-    ├─── Scout ────────────────────┐
-    │    (context report)          │
-    │                              ▼
-    ├─── Architect ◄── Scout's context
-    │    (spec)                    │
-    │                              ▼
-    ├─── Builder ◄── Architect's spec
-    │    (implementation)          │
-    │                              ▼
-    ├─── Tester ◄── Builder's changes
-    │    (additional tests)        │
-    │                              ▼
-    └─── Reviewer ◄── Full diff
-         (verdict)
+    |
+    |--- [Select target + parse failure memory]
+    |
+    |--- Scout (L3+ only) -----.
+    |    (context report)       |
+    |                           v
+    |--- Architect (L3+ only) <-- Scout's context
+    |    (spec)                 |
+    |                           v
+    |--- Builder <-- Architect's spec (L3+) or inline context (L1-2)
+    |    (implementation)       |         + failure context + lessons
+    |                           v
+    |--- Tester (L3+ or src changes) <-- Builder's changes
+    |    (additional tests)     |
+    |                           v
+    |--- Reviewer <-- Full diff + Builder result + Tester result
+    |    (verdict)
+    |         |
+    |         |--- APPROVE --> Ship PR --> Monitor CI
+    |         |
+    |         |--- REJECT (1st) --> Builder retry (same worktree)
+    |         |                         |
+    |         |                         v
+    |         |                     Re-run tests --> [Re-run Tester] --> Reviewer (2nd)
+    |         |                                                             |
+    |         |                                           APPROVE ----------+---> Ship PR
+    |         |                                           REJECT (2nd) -----+---> Abandon
+    |         |
+    |         |--- HARD REJECT (immutable violation) --> Abandon immediately
+    |
+    |--- [Update memory: velocity, coverage, fixes/failures, lessons, costs]
+    |
+    |--- [Clean up worktree]
+    |
+    v
+  Check stop conditions --> next cycle or stop
 ```
 
-Each agent receives the output of the previous agent in the chain. The Orchestrator manages the handoffs and handles failures at each stage.
+Each agent receives the output of the previous agent in the chain. The Orchestrator manages the handoffs and handles failures at each stage. Lesson memory is injected into Builder prompts (the 5 most recent relevant lessons, matched by file type and testing patterns).
