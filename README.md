@@ -1,4 +1,9 @@
-# AutoCode
+```
+   _   _   _ _____ ___   ___ ___  ___  ___
+  /_\ | | | |_   _/ _ \ / __/ _ \|   \| __|
+ / _ \| |_| | | || (_) | (_| (_) | |) | _|
+/_/ \_\\___/  |_| \___/ \___\___/|___/|___|
+```
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Claude Code](https://img.shields.io/badge/Built%20for-Claude%20Code-blueviolet)](https://docs.anthropic.com/en/docs/claude-code)
