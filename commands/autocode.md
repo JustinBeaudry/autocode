@@ -91,25 +91,96 @@ All agent work happens in this worktree. This keeps the main working tree clean.
 - `prompt`: Include the target file path, manifest contents, and any relevant failure memory
 - The Scout returns a context report
 
+### Step 3b: Design Spec (Architect) — Level 3+ Only
+
+**At Level 1-2**: Skip the Architect. The Builder works from Scout context directly (simple coverage work doesn't need a spec).
+
+**At Level 3+**: Spawn an Architect agent to design a specification:
+- `subagent_type`: "general-purpose"
+- `model`: From `manifest.model_routing.architect` (default: "sonnet")
+- `prompt`: Include the target file path, Scout's context report, manifest contents, and current difficulty level
+- The Architect returns a structured spec (target functions, approach, test cases, mocking requirements, acceptance criteria)
+
+Pass the Architect's spec to the Builder in Step 4 instead of raw Scout context.
+
 ### Step 4: Spawn Builder
 
 Use the Agent tool to spawn a Builder agent:
 - `subagent_type`: "general-purpose"
 - `model`: From `manifest.model_routing.builder` (default: "opus")
-- `prompt`: Include the target file, context (inline or Scout's report), manifest, worktree path, and difficulty level
+- `prompt`: Include the target file, context (inline Scout context at L1-2, or Architect's spec at L3+), manifest, worktree path, difficulty level, and any failure context from Step 1d
 - **If the target has previous failures** (1-2 attempts from Step 1d), append the failure context block to the Builder prompt so it avoids repeating failed approaches
 - The Builder returns a result (SUCCESS or FAILURE)
 
 **Model fallback**: If the specified model fails with an API error, retry with "sonnet". Log the fallback in the cycle summary.
 
-### Step 5: Verify
+### Step 4b: Additional Tests (Tester)
 
-If the Builder reports SUCCESS:
-1. Run the test command in the worktree to double-check
-2. If tests pass, proceed to Step 6
-3. If tests fail, log as failure, clean up worktree, move to next cycle
+**At Level 1-2 with pure functions**: Skip the Tester — the Builder already writes comprehensive tests for simple coverage work.
 
-If the Builder reports FAILURE:
+**At Level 3+, or when Builder made source code changes**: Spawn a Tester agent:
+- `subagent_type`: "general-purpose"
+- `model`: From `manifest.model_routing.tester` (default: "sonnet")
+- `prompt`: Include the target file, Builder's change summary, Scout's context, manifest, and worktree path
+- The Tester adds edge case tests, error path tests, and runs coverage measurement
+- The Tester can ONLY modify test files — never source files
+
+If the Tester reports a test failure it cannot fix:
+1. Re-spawn the Builder with the Tester's error output for one fix attempt
+2. If Builder fix fails, proceed to Reviewer with a note about the test issue
+
+Include the Tester's result (coverage delta, tests added) in the Reviewer input.
+
+### Step 5: Verify and Review
+
+#### 5a. Run Tests
+Run the test command in the worktree to verify all tests pass:
+- If tests fail → log as failure, clean up worktree, skip to next cycle
+- If tests pass → proceed to review
+
+#### 5b. Spawn Reviewer
+Spawn a Reviewer agent as the quality gate:
+- `subagent_type`: "general-purpose"
+- `model`: From `manifest.model_routing.reviewer` (default: "opus")
+- `prompt`: Include the worktree path, manifest, Scout's context, Builder's result, and Tester's result (if applicable)
+- The Reviewer returns a verdict: APPROVE or REJECT
+
+#### 5c. Handle Verdict
+
+**On APPROVE**:
+- Use the Reviewer's suggested PR title and body
+- Proceed to Step 6 (Commit and PR)
+
+**On REJECT (first time)**:
+- Parse the Reviewer's structured feedback
+- Re-spawn the Builder with the original prompt PLUS the Reviewer's feedback appended:
+  ```
+  ## Reviewer Feedback (MUST ADDRESS)
+  <reviewer's specific, actionable feedback>
+  ```
+- Builder works in the same worktree (not a new one)
+- After Builder retry, re-run Tester if applicable
+- Re-run Reviewer (second review)
+
+**On REJECT (second time)**:
+- Log the failure to `.autocode/memory/failures.md` with both rejection reasons
+- Clean up the worktree
+- Move to next cycle
+- Include in failure log:
+  ```
+  ## <file> — <timestamp>
+  - Attempt: <N>
+  - Error: Rejected by Reviewer (2x)
+  - First rejection: <feedback summary>
+  - Second rejection: <feedback summary>
+  - Approach: <what was tried>
+  ```
+
+**Hard REJECT (immutable files modified)**:
+- Immediate abandon — no retry
+- Log as failure with "IMMUTABLE_VIOLATION" tag
+
+If the Builder reports FAILURE (before reaching review):
 1. Log the failure to `.autocode/memory/failures.md`
 2. Clean up the worktree
 3. Move to next cycle
@@ -121,7 +192,7 @@ In the worktree:
 ```bash
 cd <worktree_path>
 git add -A
-git commit -m "autocode: improve coverage for <target_file>"
+git commit -m "autocode: <Reviewer's suggested PR title, or short description>"
 git push origin $BRANCH_NAME
 ```
 
@@ -131,8 +202,8 @@ gh label create autocode --description "Automated by AutoCode" --color "0E8A16" 
 ```
 
 Create a PR using `gh pr create`:
-- Title: `autocode: <short description of change>`
-- Body: Include the Builder's summary, coverage delta, and test details. End with `🤖 Generated by [AutoCode](https://github.com/ajsai47/autocode)`
+- Title: Use the Reviewer's suggested PR title (if approved), otherwise `autocode: <short description>`
+- Body: Use the Reviewer's suggested PR body (if approved), otherwise include Builder's summary. Always end with `🤖 Generated by [AutoCode](https://github.com/ajsai47/autocode)`
 - Labels: `autocode`
 
 ### Step 7: Update Memory
@@ -204,6 +275,8 @@ After each cycle, print a brief summary:
 Cycle <N> complete:
   Target: <file>
   Result: <SUCCESS|FAILURE>
+  Agents: Scout → [Architect →] Builder → [Tester →] Reviewer
+  Review: <APPROVED | REJECTED (retry) | REJECTED (2x, abandoned)>
   PR: <URL or N/A>
   Duration: <seconds>
   Level: <current difficulty level>
@@ -216,7 +289,7 @@ When the user runs `/autocode --parallel N` (or the manifest specifies parallel 
 
 1. Select N different targets from the gaps list (no overlap)
 2. Create N worktrees, each on a unique branch
-3. Spawn N Builder agents in parallel using multiple Agent tool calls in a single message
+3. Spawn N agent pipelines in parallel (each running Scout → [Architect] → Builder → [Tester] → Reviewer independently)
 4. Each builder works independently in its own worktree
 5. Collect results as each finishes
 6. Commit, push, and PR for each successful cycle
