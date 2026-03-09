@@ -2,39 +2,39 @@
   "version": 1,
   "repo": {
     "name": "my-api",
-    "language": "python",
-    "framework": "fastapi",
+    "language": "go",
+    "framework": "chi",
     "monorepo": false,
     "default_branch": "main"
   },
   "commands": {
-    "install": "pip install -e '.[dev]'",
-    "test": "pytest",
-    "coverage": "pytest --cov=src --cov-report=term-missing",
-    "typecheck": "mypy src/",
-    "lint": "ruff check .",
-    "build": null
+    "install": "go mod download",
+    "test": "go test ./...",
+    "coverage": "go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out",
+    "typecheck": "go vet ./...",
+    "lint": "golangci-lint run",
+    "build": "go build ./..."
   },
   "coverage": {
-    "tool": "coverage.py",
+    "tool": "go-cover",
     "current": {
-      "statements": 62,
-      "branches": 48,
-      "functions": 58,
-      "lines": 62
+      "statements": 52,
+      "branches": 0,
+      "functions": 48,
+      "lines": 52
     },
     "targets": {
       "statements": 80,
-      "branches": 70,
+      "branches": 0,
       "functions": 80,
       "lines": 80
     },
     "gaps": [
-      { "file": "src/routes/auth.py", "coverage": 12, "priority": 1 },
-      { "file": "src/services/payment.py", "coverage": 18, "priority": 2 },
-      { "file": "src/middleware/rate_limit.py", "coverage": 25, "priority": 3 },
-      { "file": "src/utils/crypto.py", "coverage": 35, "priority": 4 },
-      { "file": "src/models/user.py", "coverage": 42, "priority": 5 }
+      { "file": "internal/handler/auth.go", "coverage": 10, "priority": 1 },
+      { "file": "internal/middleware/ratelimit.go", "coverage": 18, "priority": 2 },
+      { "file": "internal/db/queries.go", "coverage": 22, "priority": 3 },
+      { "file": "internal/handler/users.go", "coverage": 35, "priority": 4 },
+      { "file": "internal/service/billing.go", "coverage": 40, "priority": 5 }
     ]
   },
   "scoring": {
@@ -42,7 +42,7 @@
     "weights_rationale": "Merge rate highest because shipped > written"
   },
   "guardrails": {
-    "immutable_patterns": ["*.config.*", "*.env*", ".github/**", "autocode.manifest.json", "alembic/**"],
+    "immutable_patterns": ["*.mod", "*.sum", "*.env*", ".github/**", "autocode.manifest.json"],
     "max_files_per_pr": 5,
     "max_lines_changed": 200
   },

@@ -10,9 +10,9 @@
   "commands": {
     "install": "cargo build",
     "test": "cargo test",
-    "coverage": "cargo tarpaulin --out Stdout",
-    "typecheck": null,
-    "lint": "cargo clippy -- -D warnings",
+    "coverage": "cargo tarpaulin --out stdout",
+    "typecheck": "cargo check",
+    "lint": "cargo clippy",
     "build": "cargo build --release"
   },
   "coverage": {
@@ -30,11 +30,11 @@
       "lines": 80
     },
     "gaps": [
-      { "file": "src/parser.rs", "coverage": 8, "priority": 1 },
-      { "file": "src/config.rs", "coverage": 15, "priority": 2 },
-      { "file": "src/commands/deploy.rs", "coverage": 20, "priority": 3 },
+      { "file": "src/cli/args.rs", "coverage": 8, "priority": 1 },
+      { "file": "src/commands/deploy.rs", "coverage": 15, "priority": 2 },
+      { "file": "src/commands/init.rs", "coverage": 20, "priority": 3 },
       { "file": "src/output/formatter.rs", "coverage": 28, "priority": 4 },
-      { "file": "src/utils/fs.rs", "coverage": 35, "priority": 5 }
+      { "file": "src/config/loader.rs", "coverage": 35, "priority": 5 }
     ]
   },
   "scoring": {

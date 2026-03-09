@@ -14,7 +14,7 @@ Search for config files to identify the project:
 | `tsconfig.json` | TypeScript | Confirms TS over JS |
 | `pyproject.toml` / `setup.py` / `requirements.txt` | Python | Check for fastapi, django, flask, etc. |
 | `Cargo.toml` | Rust | Check for actix, axum, rocket, etc. |
-| `go.mod` | Go | Check for gin, echo, fiber, etc. |
+| `go.mod` | Go | Check for gin, echo, fiber, chi, etc. in require |
 | `pom.xml` / `build.gradle` | Java/Kotlin | Check for spring, etc. |
 
 Use Glob to find these files, then Read to inspect them.
@@ -39,13 +39,60 @@ Find the test, build, lint, and typecheck commands:
 - `build` → build command
 - Install is typically `npm ci` or `pnpm install` or `yarn install` (check lockfile)
 
-**For Python projects**: Check `pyproject.toml` for:
-- `[tool.pytest]` → `pytest`
-- `[tool.coverage]` → `pytest --cov`
-- `[tool.ruff]` or `[tool.flake8]` → lint
-- `[tool.mypy]` → typecheck
+**For Python projects**: Check `pyproject.toml` first, then `setup.cfg`, then `setup.py`:
+- Test: `pytest` (check if pytest is in dependencies). Fallback: `python -m pytest`
+- Coverage: `pytest --cov=<src_dir> --cov-report=term-missing` (if pytest-cov installed)
+- Lint: Check for `ruff` (preferred), `flake8`, or `pylint` in dependencies
+- Typecheck: Check for `mypy` or `pyright` in dependencies
+- Build: `pip install -e .` or `poetry build` (check for poetry.lock)
+- Install: `pip install -r requirements.txt` or `poetry install` or `pip install -e ".[dev]"`
 
-**For Rust projects**: Commands are typically standard (`cargo test`, `cargo build`, etc.)
+**Coverage output parsing for Python**:
+Look for the summary line from coverage.py/pytest-cov:
+```
+Name                      Stmts   Miss  Cover
+---------------------------------------------
+src/module.py                50     10    80%
+---------------------------------------------
+TOTAL                       200     40    80%
+```
+Parse each row: file path, statements, misses, coverage percentage.
+
+**For Rust projects**: Commands are mostly standard:
+- Test: `cargo test`
+- Coverage: `cargo tarpaulin --out stdout` (if cargo-tarpaulin installed). Alternative: `cargo llvm-cov`
+- Lint: `cargo clippy`
+- Typecheck: `cargo check`
+- Build: `cargo build`
+- Install: N/A (Cargo handles dependencies)
+
+**Coverage output parsing for Rust**:
+Tarpaulin output format:
+```
+|| Tested/Total Lines:
+|| src/main.rs: 20/30
+|| src/lib.rs: 45/50
+||
+45.00% coverage, 65/80 lines covered
+```
+Parse the per-file lines and the total percentage.
+
+**For Go projects**: Check `go.mod` for module path:
+- Test: `go test ./...`
+- Coverage: `go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out`
+- Lint: Check for `golangci-lint` (preferred) or `go vet`
+- Typecheck: `go vet ./...` (Go's type checker is part of the compiler)
+- Build: `go build ./...`
+- Install: `go mod download`
+
+**Coverage output parsing for Go**:
+`go tool cover -func` output format:
+```
+github.com/user/repo/pkg/handler.go:25:    HandleRequest    80.0%
+github.com/user/repo/pkg/handler.go:50:    ValidateInput    100.0%
+total:                                      (statements)     75.0%
+```
+Parse each function-level line and the total percentage.
 
 ### 4. Install Coverage Tooling (if missing)
 
@@ -58,9 +105,11 @@ If approved, run `npm install -D @vitest/coverage-v8` and set coverage command t
 
 **Node.js (jest)**: If jest is the test runner, coverage is built-in: `jest --coverage`.
 
-**Python**: Check for `coverage` or `pytest-cov` in dependencies. If missing, suggest `pip install pytest-cov`.
+**Python**: Check for `coverage` or `pytest-cov` in dependencies. If missing, suggest `pip install pytest-cov` (or add `pytest-cov` to dev dependencies in `pyproject.toml`). Set coverage command to `pytest --cov=<src_dir> --cov-report=term-missing`.
 
-**Rust**: Check if `cargo-tarpaulin` is installed. If not, suggest `cargo install cargo-tarpaulin`.
+**Rust**: Check if `cargo-tarpaulin` is installed (`cargo tarpaulin --version`). If not, suggest `cargo install cargo-tarpaulin` (note: this can take a few minutes to compile). Set coverage command to `cargo tarpaulin --out stdout`.
+
+**Go**: Coverage is built-in, no additional tooling needed. Just use the `-coverprofile` flag: `go test -coverprofile=coverage.out ./... && go tool cover -func=coverage.out`.
 
 This step is critical — without real coverage data, the factory guesses at gaps and can't measure improvement.
 
@@ -77,9 +126,14 @@ If a coverage command exists (detected or just installed), run it. Parse the out
 - Per-file coverage to identify gaps
 
 Coverage output parsing by tool:
-- **v8/istanbul**: Look for the summary table at the end
-- **coverage.py**: Look for the summary line
-- **tarpaulin**: Look for the final percentage
+
+- **v8/istanbul** (Node.js): Look for the summary table at the end with columns: `% Stmts`, `% Branch`, `% Funcs`, `% Lines`. Parse the `All files` row for totals.
+
+- **coverage.py / pytest-cov** (Python): Look for the table with columns: `Name`, `Stmts`, `Miss`, `Cover`. Parse each file row for per-file coverage. The `TOTAL` row has the overall percentage. If `--cov-report=term-missing` was used, there is also a `Missing` column with uncovered line ranges.
+
+- **tarpaulin** (Rust): Look for per-file lines like `|| src/main.rs: 20/30` for tested/total lines. The final summary line has the format `XX.XX% coverage, N/M lines covered`. Parse both per-file and total.
+
+- **go tool cover -func** (Go): Each line shows `file:line: FuncName percentage%`. The last line starting with `total:` has the overall statement coverage. Parse each function-level line for per-file gaps and the total for overall coverage.
 
 **IMPORTANT**: If coverage tooling is not available and the user declined to install it, do NOT estimate coverage by reading code. Set coverage to null and note it. Estimated coverage is misleading — it's better to have no data than wrong data.
 
