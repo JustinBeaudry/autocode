@@ -81,6 +81,20 @@ git worktree add .autocode/worktrees/$BRANCH_NAME -b $BRANCH_NAME
 
 All agent work happens in this worktree. This keeps the main working tree clean.
 
+### Step 2b: Measure Baseline Coverage
+
+If the manifest has a coverage command (`manifest.commands.coverage` is not null):
+
+1. Run the coverage command in the worktree BEFORE any changes:
+   ```bash
+   cd <worktree_path> && <coverage_command>
+   ```
+2. Parse the output to extract per-file coverage percentages (see the manifest's `coverage.tool` for the output format — v8/istanbul, pytest-cov, tarpaulin, or go-cover)
+3. Record the baseline coverage for the target file specifically
+4. Record the overall coverage percentage
+
+If coverage command is not available, skip this step — coverage deltas will be reported as "N/A".
+
 ### Step 3: Gather Context (Scout)
 
 **At Level 1-2**: Skip spawning a separate Scout agent. Instead, read the target file, its types/imports, and one existing test file directly using Read/Glob/Grep. The Builder prompt will include this context. This saves an entire agent spawn (~30s) for simple pure-function work where the Builder would read the same files anyway.
@@ -90,6 +104,17 @@ All agent work happens in this worktree. This keeps the main working tree clean.
 - `model`: From `manifest.model_routing.scout` (default: "sonnet"). Note: avoid "haiku" — it may fail on repos with many MCP tools due to schema size limits. Use "sonnet" as the safe default.
 - `prompt`: Include the target file path, manifest contents, and any relevant failure memory
 - The Scout returns a context report
+
+**Lesson injection**: Read `.autocode/memory/lessons.md` and extract the 5 most recent relevant lessons (matching the target file's language, framework, or testing patterns). Include them in the context passed to downstream agents:
+
+```
+## Relevant Lessons from Previous Cycles
+- <lesson 1 summary>
+- <lesson 2 summary>
+- <lesson 3 summary>
+```
+
+Relevance is determined by: same file type (e.g., `.ts`), same test framework, similar module type (pure function, utility, integration), or same file previously attempted.
 
 ### Step 3b: Design Spec (Architect) — Level 3+ Only
 
@@ -110,6 +135,11 @@ Use the Agent tool to spawn a Builder agent:
 - `model`: From `manifest.model_routing.builder` (default: "opus")
 - `prompt`: Include the target file, context (inline Scout context at L1-2, or Architect's spec at L3+), manifest, worktree path, difficulty level, and any failure context from Step 1d
 - **If the target has previous failures** (1-2 attempts from Step 1d), append the failure context block to the Builder prompt so it avoids repeating failed approaches
+- **Lessons**: Include the relevant lessons extracted in Step 3. Append to the Builder prompt:
+  ```
+  ## Lessons from Previous Cycles (follow these)
+  - <pattern that worked or anti-pattern to avoid>
+  ```
 - The Builder returns a result (SUCCESS or FAILURE)
 
 **Model fallback**: If the specified model fails with an API error, retry with "sonnet". Log the fallback in the cycle summary.
@@ -138,6 +168,14 @@ Run the test command in the worktree to verify all tests pass:
 - If tests fail → log as failure, clean up worktree, skip to next cycle
 - If tests pass → proceed to review
 
+If the manifest has a coverage command, run it now to measure post-change coverage:
+1. Run: `cd <worktree_path> && <coverage_command>`
+2. Parse the output (same format as Step 2b)
+3. Calculate the delta:
+   - Target file delta: `post_coverage - baseline_coverage` for the target file
+   - Overall delta: `post_overall - baseline_overall`
+4. Include both deltas in the Reviewer input and cycle summary
+
 #### 5b. Spawn Reviewer
 Spawn a Reviewer agent as the quality gate:
 - `subagent_type`: "general-purpose"
@@ -152,15 +190,43 @@ Spawn a Reviewer agent as the quality gate:
 - Proceed to Step 6 (Commit and PR)
 
 **On REJECT (first time)**:
-- Parse the Reviewer's structured feedback
-- Re-spawn the Builder with the original prompt PLUS the Reviewer's feedback appended:
-  ```
-  ## Reviewer Feedback (MUST ADDRESS)
-  <reviewer's specific, actionable feedback>
-  ```
-- Builder works in the same worktree (not a new one)
-- After Builder retry, re-run Tester if applicable
-- Re-run Reviewer (second review)
+
+Parse the Reviewer's structured feedback, then construct a retry prompt for the Builder:
+
+```
+You are RETRYING a previous implementation that was rejected by the Reviewer.
+
+## Original Task
+<original builder prompt>
+
+## Your Previous Implementation
+<summary of what you built — files changed, tests added>
+
+## Reviewer Feedback (MUST ADDRESS)
+<reviewer's specific, actionable feedback items>
+
+## Instructions
+- Address EVERY point in the Reviewer's feedback
+- Do NOT start over — fix the existing implementation in this worktree
+- Run tests after making changes
+- If the feedback asks you to remove something, remove it
+- If the feedback asks for a different approach, refactor accordingly
+```
+
+Re-spawn the Builder with this retry prompt. The Builder works in the same worktree (not a new one).
+
+**Retry pipeline** — after Builder retry completes, follow this sequence:
+
+1. If Builder reports FAILURE → abandon immediately (do not waste a second review). Log as failure and clean up.
+2. If Builder reports SUCCESS → re-run tests (Step 5a).
+3. If tests fail → abandon. Log as failure and clean up.
+4. If tests pass AND the Tester was run originally (Step 4b) → re-run the Tester in the same worktree. If Tester reports a failure it cannot fix, give the Builder one more fix attempt. If that also fails, proceed to the second review with a note about the test issue.
+5. Re-run Reviewer (Step 5b) — this is the SECOND review. Pass the following flag in the Reviewer prompt:
+   ```
+   This is a RETRY review. The Builder was given this feedback on the first attempt:
+   <original reviewer feedback>
+   Verify that EVERY item in the feedback was addressed. If the Builder ignored or partially addressed any item, REJECT.
+   ```
 
 **On REJECT (second time)**:
 - Log the failure to `.autocode/memory/failures.md` with both rejection reasons
@@ -171,13 +237,16 @@ Spawn a Reviewer agent as the quality gate:
   ## <file> — <timestamp>
   - Attempt: <N>
   - Error: Rejected by Reviewer (2x)
-  - First rejection: <feedback summary>
-  - Second rejection: <feedback summary>
+  - First rejection: <1-2 sentence summary of first feedback>
+  - Second rejection: <1-2 sentence summary of second feedback>
   - Approach: <what was tried>
+  - Builder retried: YES
+  - Note: Consider a different approach or difficulty level for this file
   ```
 
 **Hard REJECT (immutable files modified)**:
-- Immediate abandon — no retry
+- Immediate abandon — no retry, even during a retry attempt
+- If a hard reject occurs during a RETRY (the Builder modified immutable files while addressing feedback), treat it the same: abandon immediately, no further retries
 - Log as failure with "IMMUTABLE_VIOLATION" tag
 
 If the Builder reports FAILURE (before reaching review):
@@ -219,13 +288,32 @@ After each cycle, update the memory files:
 - Duration: <seconds>
 ```
 
-**`.autocode/memory/coverage.md`**: Update per-file coverage if available:
+**`.autocode/memory/coverage.md`**: Update per-file coverage tracking:
+
+If real coverage data was collected (Step 2b and Step 5a):
 ```
-## <file>
-- Before: <X>%
-- After: <Y>%
+## <file> — <timestamp>
+- Before: <X>% (measured)
+- After: <Y>% (measured)
+- Delta: +<Z>%
+- Overall: <A>% → <B>% (+<C>%)
 - PR: <URL>
 ```
+
+If coverage data was NOT available:
+```
+## <file> — <timestamp>
+- Coverage: N/A (no coverage command configured)
+- Tests added: <count>
+- PR: <URL>
+```
+
+**Update manifest gaps**: If real coverage data was collected, update the manifest's `coverage.gaps` array:
+- For the target file: update its `coverage` percentage to the new measured value
+- If the target file's coverage now exceeds the manifest's `coverage.targets` threshold for its metric, remove it from the gaps array
+- Re-sort gaps by coverage percentage (ascending) and update priority numbers
+- Update `coverage.current` with the new overall coverage percentages
+- Write the updated manifest back to `autocode.manifest.json`
 
 **`.autocode/memory/failures.md`** (on failure): Append:
 ```
@@ -242,6 +330,38 @@ After each cycle, update the memory files:
 - Tests added: <count>
 - Coverage delta: +<N>%
 ```
+
+**`.autocode/memory/lessons.md`** (after every cycle): Extract and append lessons learned:
+
+**On SUCCESS**: Extract what worked:
+```
+## Lesson — <timestamp>
+- Target: <file>
+- Type: SUCCESS
+- Pattern: <what approach worked — e.g., "Used vi.mock() for module-level mocking", "Tested pure functions without mocking dependencies">
+- Test style: <what test patterns were effective — e.g., "describe/it blocks with factory helpers", "table-driven tests">
+- Mocking: <what mocking approach was used — e.g., "vi.spyOn for methods", "manual mock objects", "no mocking needed">
+```
+
+**On FAILURE**: Extract what to avoid:
+```
+## Lesson — <timestamp>
+- Target: <file>
+- Type: FAILURE
+- Anti-pattern: <what approach failed — e.g., "Tried to mock private methods directly", "Used real network calls in tests">
+- Reason: <why it failed — e.g., "TypeScript doesn't allow mocking private methods", "Network timeout in CI">
+```
+
+**On REVIEWER REJECT**: Extract quality insights:
+```
+## Lesson — <timestamp>
+- Target: <file>
+- Type: REVIEW_FEEDBACK
+- Issue: <what the Reviewer caught — e.g., "Tests had no error path coverage", "Assertions were too loose (toBeTruthy instead of specific values)">
+- Fix: <how it was resolved>
+```
+
+**Deduplication**: Before appending a new lesson, scan existing lessons for duplicates. If a lesson with the same Pattern/Anti-pattern already exists, skip it. Update the timestamp on existing lessons if the same pattern is confirmed again.
 
 ### Step 8: Clean Up Worktree
 
@@ -276,7 +396,8 @@ Cycle <N> complete:
   Target: <file>
   Result: <SUCCESS|FAILURE>
   Agents: Scout → [Architect →] Builder → [Tester →] Reviewer
-  Review: <APPROVED | REJECTED (retry) | REJECTED (2x, abandoned)>
+  Review: <APPROVED | APPROVED (after retry) | REJECTED (2x, abandoned)>
+  Coverage: <file>: <X>% → <Y>% (+<Z>%) | Overall: <A>% → <B>% (+<C>%) | or "N/A"
   PR: <URL or N/A>
   Duration: <seconds>
   Level: <current difficulty level>
