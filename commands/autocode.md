@@ -15,13 +15,59 @@ Each cycle follows this sequence:
 
 ### Step 1: Select Target
 
-Read the manifest's `coverage.gaps` array. Pick the highest-priority gap that:
-- Has NOT been attempted in the last 3 cycles (check `.autocode/memory/failures.md`)
-- Is NOT in the immutable patterns list
-- Matches the current difficulty level
+#### 1a. Parse failures.md
 
-If no suitable target exists:
-- If all gaps have been attempted, report "All coverage gaps have been attempted. Run `/autocode-bootstrap` to refresh the manifest."
+Read `.autocode/memory/failures.md`. Build a failure map by scanning each `## <file>` section:
+
+For each section headed `## <file> — <timestamp>`:
+- Count the number of `- Attempt:` entries across ALL sections for that file (multiple sections = multiple attempts)
+- Record the most recent timestamp for that file
+- Check for a `PERMANENT SKIP` marker anywhere in the file's sections
+
+Result: a map of `{file_path: {attempt_count, last_attempt_timestamp, permanent_skip}}`.
+
+#### 1b. Apply skip rules
+
+Read the manifest's `coverage.gaps` array. For each gap, check the failure map and apply these rules in order:
+
+1. **Permanent skip**: If the file has a `PERMANENT SKIP` marker in failures.md → SKIP always
+2. **Too many failures**: If the file has 3+ total failure attempts → SKIP (too hard at current level)
+3. **Cooldown**: If the file was attempted in the last 2 cycles (compare its `last_attempt_timestamp` against the last 2 cycle timestamps in `.autocode/memory/velocity.md`) → SKIP
+4. **Immutable**: If the file is in the manifest's immutable patterns list → SKIP
+5. **Difficulty mismatch**: If the file doesn't match the current difficulty level → SKIP
+
+Pick the highest-priority gap that passes all rules.
+
+#### 1c. Log skip decisions
+
+Include skip decisions in the cycle summary output:
+
+```
+Skipped targets:
+  - src/foo.ts: 3 failures (skip threshold)
+  - src/bar.ts: attempted 1 cycle ago (cooldown)
+  - src/qux.ts: PERMANENT SKIP
+Selected: src/baz.ts (0 previous failures)
+```
+
+#### 1d. Prepare failure context for selected target
+
+If the selected target has 1-2 previous failures, extract the failure details and hold them for Step 4:
+
+```
+## Previous Failures for This File
+- Attempt 1: <error description> — <approach tried>
+- Attempt 2: <error description> — <approach tried>
+
+IMPORTANT: Avoid the approaches described above. Try a different strategy.
+```
+
+If the selected target has 0 previous failures, no failure context is needed.
+
+#### 1e. No target available
+
+If no suitable target exists after applying all skip rules:
+- If all gaps have been attempted or skipped, report "All coverage gaps have been attempted or skipped. Run `/autocode-bootstrap` to refresh the manifest."
 - Stop the loop.
 
 ### Step 2: Create Worktree
@@ -51,6 +97,7 @@ Use the Agent tool to spawn a Builder agent:
 - `subagent_type`: "general-purpose"
 - `model`: From `manifest.model_routing.builder` (default: "opus")
 - `prompt`: Include the target file, context (inline or Scout's report), manifest, worktree path, and difficulty level
+- **If the target has previous failures** (1-2 attempts from Step 1d), append the failure context block to the Builder prompt so it avoids repeating failed approaches
 - The Builder returns a result (SUCCESS or FAILURE)
 
 **Model fallback**: If the specified model fails with an API error, retry with "sonnet". Log the fallback in the cycle summary.
