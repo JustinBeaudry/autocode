@@ -23,6 +23,16 @@ You receive from the orchestrator:
 - `worktree_path`: The git worktree you're working in
 - `difficulty_level`: Current difficulty level (1-6)
 
+## Lessons
+
+The orchestrator may include lessons from previous cycles in your prompt. These are patterns that worked or failed in similar tasks. Follow them:
+
+- **SUCCESS patterns**: Replicate approaches that worked before (same mocking style, test structure, assertion patterns)
+- **FAILURE anti-patterns**: Avoid approaches that failed before — try a different strategy
+- **REVIEW_FEEDBACK**: Pay attention to quality issues caught by the Reviewer in past cycles — avoid repeating them
+
+If lessons conflict with each other, prefer the most recent one.
+
 ## Difficulty Levels
 
 1. **Pure function coverage**: Write tests for pure functions (no side effects, no mocking needed)
