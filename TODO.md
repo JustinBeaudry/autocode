@@ -11,7 +11,7 @@
 
 The orchestrator currently runs Scout → Builder → Ship. The full pipeline needs all 5 agents wired in with the rejection loop.
 
-### AC-01: Wire Reviewer gate into orchestrator
+### ~~AC-01: Wire Reviewer gate into orchestrator~~ [x] PR #5
 **Priority**: P0 | **Files**: `commands/autocode.md`
 **Description**: Add Step 5.5 between Verify and Ship. After Builder succeeds and tests pass, spawn a Reviewer agent. On APPROVE → proceed to Ship. On REJECT → pass feedback to Builder for one retry. On second REJECT → log failure, abandon cycle.
 **Acceptance Criteria**:
@@ -21,7 +21,7 @@ The orchestrator currently runs Scout → Builder → Ship. The full pipeline ne
 - Second REJECT → cycle abandoned, failure logged to memory
 - Hard reject (immutable files touched) → immediate abandon, no retry
 
-### AC-02: Wire Architect into orchestrator at Level 3+
+### ~~AC-02: Wire Architect into orchestrator at Level 3+~~ [x] PR #5
 **Priority**: P0 | **Files**: `commands/autocode.md`
 **Description**: At Level 3+, add a step between Scout and Builder. Spawn Architect agent with Scout's context. Architect returns a spec. Builder receives the spec instead of raw context. This produces higher-quality implementations for harder tasks.
 **Acceptance Criteria**:
@@ -30,7 +30,7 @@ The orchestrator currently runs Scout → Builder → Ship. The full pipeline ne
 - At Level 1-2, Architect is skipped (current behavior preserved)
 - Model routing respected (manifest.model_routing.architect)
 
-### AC-03: Wire Tester agent into orchestrator
+### ~~AC-03: Wire Tester agent into orchestrator~~ [x] PR #5
 **Priority**: P0 | **Files**: `commands/autocode.md`
 **Description**: After Builder succeeds, spawn Tester agent in the same worktree. Tester writes additional test coverage (test files only). This runs BEFORE the Reviewer, so the Reviewer sees the complete diff (source + additional tests).
 **Acceptance Criteria**:
@@ -40,7 +40,7 @@ The orchestrator currently runs Scout → Builder → Ship. The full pipeline ne
 - If Tester fails (tests break), Builder gets one fix attempt
 - At Level 1-2 with simple targets, Tester can be skipped (Builder already writes tests)
 
-### AC-04: Implement the rejection loop
+### ~~AC-04: Implement the rejection loop~~ [x] PR #7
 **Priority**: P0 | **Files**: `commands/autocode.md`
 **Description**: When Reviewer REJECTs, the orchestrator must: (1) parse the Reviewer's structured feedback, (2) re-spawn Builder with the feedback appended to the original prompt, (3) re-run Tester if applicable, (4) re-run Reviewer. Max 1 retry. Track retry count in cycle summary.
 **Acceptance Criteria**:
@@ -56,7 +56,7 @@ The orchestrator currently runs Scout → Builder → Ship. The full pipeline ne
 
 Memory is written but barely consumed. Agents need to read and learn from past cycles.
 
-### AC-05: Consume failures memory to prevent retries
+### ~~AC-05: Consume failures memory to prevent retries~~ [x] PR #3
 **Priority**: P1 | **Files**: `commands/autocode.md`
 **Description**: Before selecting a target in Step 1, parse `.autocode/memory/failures.md` and build a skip list. Skip files with 3+ failures OR files with a "PERMANENT SKIP" marker. Pass relevant failure context to Scout/Builder so they avoid the same approach.
 **Acceptance Criteria**:
@@ -66,7 +66,7 @@ Memory is written but barely consumed. Agents need to read and learn from past c
 - When a target has 1-2 previous failures, the failure context is included in the Builder prompt
 - Skip list logged in cycle summary
 
-### AC-06: Lessons memory — extract and consume patterns
+### ~~AC-06: Lessons memory — extract and consume patterns~~ [x] PR #8
 **Priority**: P1 | **Files**: `commands/autocode.md`, `agents/builder.md`
 **Description**: After each cycle, extract lessons: what patterns worked, what mocking approaches succeeded, what test styles passed review. Write to `.autocode/memory/lessons.md`. Before each cycle, read lessons and include relevant ones in Builder/Tester prompts.
 **Acceptance Criteria**:
@@ -75,7 +75,7 @@ Memory is written but barely consumed. Agents need to read and learn from past c
 - Builder prompt includes top 5 relevant lessons
 - Lessons deduplicated (don't repeat the same lesson)
 
-### AC-07: Coverage tracking with real data
+### ~~AC-07: Coverage tracking with real data~~ [x] PR #9
 **Priority**: P1 | **Files**: `commands/autocode-bootstrap.md`, `commands/autocode.md`
 **Description**: Bootstrap already installs coverage tooling. The orchestrator should run coverage before AND after each cycle, parse the output, and track real deltas per-file. Update `.autocode/memory/coverage.md` with actual numbers. Update manifest's `coverage.gaps` after each cycle.
 **Acceptance Criteria**:
@@ -89,7 +89,7 @@ Memory is written but barely consumed. Agents need to read and learn from past c
 
 ## P2 — Intelligence & Safety
 
-### AC-08: Diminishing returns detection
+### ~~AC-08: Diminishing returns detection~~ [x] PR #11
 **Priority**: P2 | **Files**: `commands/autocode.md`
 **Description**: The orchestrator mentions checking for diminishing returns (Step 9) but doesn't implement it. Track the last 5 coverage deltas. If all 5 are < 0.5%, pause and report. Also track: if last 3 PRs were all rejected by Reviewer, pause.
 **Acceptance Criteria**:
@@ -99,7 +99,7 @@ Memory is written but barely consumed. Agents need to read and learn from past c
 - Clear message to user: what happened, what to do (re-bootstrap, raise difficulty, manual investigation)
 - Can be overridden: user can set `"ignore_diminishing_returns": true` in manifest
 
-### AC-09: Auto-revert on CI failure
+### ~~AC-09: Auto-revert on CI failure~~ [x] PR #11
 **Priority**: P2 | **Files**: `commands/autocode.md`
 **Description**: After a PR is merged, monitor CI status. If CI fails on the default branch within 10 minutes of merge, and the failing commit is from AutoCode, create a revert PR automatically.
 **Acceptance Criteria**:
@@ -109,7 +109,7 @@ Memory is written but barely consumed. Agents need to read and learn from past c
 - Downgrade difficulty level by 1
 - Revert PR gets the `autocode` label + `revert` label
 
-### AC-10: Cost tracking per cycle
+### ~~AC-10: Cost tracking per cycle~~ [x] PR #10
 **Priority**: P2 | **Files**: `commands/autocode.md`, `commands/autocode-status.md`
 **Description**: Track estimated cost per cycle based on model usage. Log to `.autocode/memory/costs.md`. Display cumulative costs in `/autocode-status`.
 **Acceptance Criteria**:
@@ -119,7 +119,7 @@ Memory is written but barely consumed. Agents need to read and learn from past c
 - Status dashboard shows: total estimated cost, cost per successful PR, cost trend
 - Warning when estimated spend exceeds $10 in a session
 
-### AC-11: Manifest auto-refresh
+### ~~AC-11: Manifest auto-refresh~~ [x] PR #11
 **Priority**: P2 | **Files**: `commands/autocode.md`
 **Description**: After every 10 successful cycles, re-run the coverage analysis portion of bootstrap to refresh the gaps list. Files that now have good coverage get removed from gaps. New files that have appeared get added.
 **Acceptance Criteria**:
@@ -134,7 +134,7 @@ Memory is written but barely consumed. Agents need to read and learn from past c
 
 ## P3 — Scale & Polish
 
-### AC-12: Parallel pipeline coordination
+### ~~AC-12: Parallel pipeline coordination~~ [x] PR #11
 **Priority**: P3 | **Files**: `commands/autocode.md`
 **Description**: Current parallel mode (Step 10) is ad-hoc. Formalize it: maintain a work queue, ensure no two parallel cycles touch the same file or its tests, coordinate memory writes to avoid conflicts.
 **Acceptance Criteria**:
@@ -144,7 +144,7 @@ Memory is written but barely consumed. Agents need to read and learn from past c
 - Failed cycles don't block successful ones
 - Max parallel configurable in manifest (default: 3, max: 5)
 
-### AC-13: Bootstrap — cross-language support
+### ~~AC-13: Bootstrap — cross-language support~~ [x] PR #6
 **Priority**: P3 | **Files**: `commands/autocode-bootstrap.md`
 **Description**: Bootstrap handles TypeScript well (dogfooded). Verify and fix Python (pytest/coverage.py) and Rust (cargo test/tarpaulin) detection. Add Go (go test/go cover) support.
 **Acceptance Criteria**:
@@ -153,7 +153,7 @@ Memory is written but barely consumed. Agents need to read and learn from past c
 - Go: detects go test, parses `go test -cover` output
 - Each language has a working example manifest in examples/
 
-### AC-14: Install script improvements
+### ~~AC-14: Install script improvements~~ [x] PR #1
 **Priority**: P3 | **Files**: `install.sh`, `uninstall.sh`
 **Description**: Make install idempotent (safe to re-run), add version checking, verify symlinks after creation, support both `~/.claude/commands/` and `~/.claude/agents/` paths.
 **Acceptance Criteria**:
@@ -163,7 +163,7 @@ Memory is written but barely consumed. Agents need to read and learn from past c
 - Both scripts handle missing directories gracefully
 - Version check: warn if autocode files are newer than installed symlinks
 
-### AC-15: README launch polish
+### ~~AC-15: README launch polish~~ [x] PR #4
 **Priority**: P3 | **Files**: `README.md`
 **Description**: Polish README for public launch. Add: architecture diagram as actual image (not ASCII), badges (license, version), troubleshooting section, FAQ, link to demo video/GIF.
 **Acceptance Criteria**:
@@ -173,7 +173,7 @@ Memory is written but barely consumed. Agents need to read and learn from past c
 - FAQ: cost estimates, supported languages, how to customize
 - Dogfood results table updated with latest data
 
-### AC-16: Agent prompt hardening
+### ~~AC-16: Agent prompt hardening~~ [x] PR #2
 **Priority**: P3 | **Files**: `agents/*.md`
 **Description**: Agent prompts use `{{placeholder}}` syntax but the orchestrator doesn't actually template these. Either implement variable substitution in the orchestrator, or rewrite agent prompts to receive values via the prompt itself.
 **Acceptance Criteria**:
