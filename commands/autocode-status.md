@@ -16,6 +16,7 @@ Read all memory files from `.autocode/memory/`:
 - `fixes.md` — successful changes
 - `failures.md` — failed attempts
 - `lessons.md` — accumulated learnings
+- `costs.md` — per-cycle cost estimates
 
 ### 3. Compute Metrics
 
@@ -31,6 +32,25 @@ From the coverage log, calculate:
 - **Coverage progression**: Starting coverage → current coverage
 - **Total coverage delta**: Sum of all deltas
 - **Best single improvement**: Largest delta from one cycle
+
+From the costs log (`.autocode/memory/costs.md`), calculate:
+- **Total estimated cost**: Sum of all cycle costs
+- **Cost per successful PR**: Total cost / number of successful cycles
+- **Cost per coverage point**: Total cost / total coverage delta
+- **Cost trend**: Are recent cycles getting cheaper or more expensive?
+- **Most expensive cycle**: Which cycle cost the most and why (which agents/models used)
+
+**Cost estimation model** (when actual token counts aren't available):
+Estimate per agent spawn based on the model used:
+| Model | Estimated cost per agent spawn |
+|-------|-------------------------------|
+| haiku | ~$0.01 |
+| sonnet | ~$0.05-0.15 |
+| opus | ~$0.30-1.00 |
+
+Per-cycle estimate = sum of all agent spawns in that cycle.
+Typical Level 1-2 cycle (Builder only): ~$0.30-1.00
+Typical Level 3+ cycle (Scout + Architect + Builder + Tester + Reviewer): ~$1.50-3.00
 
 From the failures log:
 - **Most-failed file**: File with the most failure entries
@@ -60,6 +80,11 @@ Coverage:    <start>% → <current>% (+<delta>%)
 Best Cycle:  +<N>% on <file>
 Avg Time:    <N>s per cycle
 
+Cost:        ~$<total> estimated total
+Per PR:      ~$<cost_per_pr> per successful PR
+Per Cov Pt:  ~$<cost_per_point> per coverage percentage point
+Trend:       <cheaper | stable | more expensive> (last 5 cycles)
+
 Top Coverage Gaps Remaining:
   1. <file> — <X>% coverage
   2. <file> — <X>% coverage
@@ -71,6 +96,24 @@ Recent Cycles:
   <timestamp> — <file> — <SUCCESS|FAILURE> — <PR URL or reason>
 
 Most-Failed:  <file> (<N> attempts)
+```
+
+### 6. Cost Warning
+
+If total estimated cost exceeds $10 in the current session, display a warning:
+```
+⚠️  Estimated spend: $<amount>. Consider pausing to review cost efficiency.
+    Run `/autocode-stop` to pause the factory.
+```
+
+---
+
+**Expected format of `.autocode/memory/costs.md`**:
+```
+## Cycle <N> — <timestamp>
+- Agents spawned: <list of agent:model pairs>
+- Estimated cost: $<amount>
+- Cumulative: $<running_total>
 ```
 
 If any memory files don't exist, show "No data yet — run `/autocode` to start."
