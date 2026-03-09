@@ -40,6 +40,8 @@ Reorder which files get tackled first:
 
 Priority 1 is tackled first. Set high priority numbers to deprioritize files.
 
+Note: The gaps array is automatically refreshed with real coverage data every 10 successful cycles (see [Manifest Auto-Refresh](#manifest-auto-refresh) below). Manual edits to coverage percentages will be overwritten on the next refresh.
+
 ### Guardrails
 
 Control what the factory can and cannot touch:
@@ -98,6 +100,8 @@ Control the starting difficulty and progression:
 
 - Set `current_level` to 3+ if your project already has good pure-function coverage
 - The factory will auto-advance after 3 consecutive successes
+- After 3 consecutive failures, the factory drops back one level (minimum 1)
+- A CI regression (auto-revert) also downgrades difficulty by 1 level
 
 ### Model Routing
 
@@ -115,11 +119,41 @@ Control which AI models each agent uses:
 }
 ```
 
-- Use "sonnet" for Scout and Tester (Haiku may fail on repos with many MCP tools)
+- **Scout default is "sonnet"** (not "haiku"). Haiku fails on repos with many MCP tools due to schema size limits. Sonnet is the safe default.
 - Use "sonnet" for mid-complexity agents (Architect, Tester)
 - Use "opus" for high-judgment agents (Builder, Reviewer)
+- If a specified model fails with an API error, the Builder falls back to "sonnet" automatically
 
-**Cost tradeoff**: Using Haiku everywhere is ~10x cheaper but produces lower-quality implementations. Using Opus everywhere produces better results but costs significantly more per cycle.
+**Cost tradeoff**: Using Sonnet everywhere is cheaper but produces lower-quality implementations. Using Opus everywhere produces better results but costs significantly more per cycle. The default routing balances cost and quality.
+
+### Parallel Mode
+
+Control concurrent pipeline execution:
+
+```json
+{
+  "parallel": 3
+}
+```
+
+- **Default**: 1 (sequential mode)
+- **Maximum**: 5 pipelines
+- Or pass `--parallel N` as a CLI flag to `/autocode`
+- Each pipeline gets its own worktree and runs the full cycle independently
+- A dependency conflict graph prevents parallel work on files that share imports
+- Memory updates are batched — all writes happen after all pipelines complete
+
+### Diminishing Returns Override
+
+By default, the factory stops when the last 5 successful coverage deltas are all < 0.5%. To override this:
+
+```json
+{
+  "ignore_diminishing_returns": true
+}
+```
+
+Use this when you want the factory to continue grinding through low-delta improvements (e.g., reaching a specific coverage target). Be aware this may result in many small PRs with marginal coverage gains.
 
 ## Agent Customization
 
@@ -160,6 +194,19 @@ Edit `agents/builder.md` to enforce specific patterns:
 
 ## Memory Management
 
+### Memory Files
+
+AutoCode maintains these files in `.autocode/memory/`:
+
+| File | Purpose | Updated |
+|------|---------|---------|
+| `fixes.md` | Successful changes and their descriptions | On SUCCESS |
+| `failures.md` | Failed attempts with error details and attempt counts | On FAILURE or REJECT |
+| `velocity.md` | Cycle-by-cycle timing and results | Every cycle |
+| `coverage.md` | Per-file coverage progression (real measured deltas) | Every cycle with coverage data |
+| `lessons.md` | Patterns that work, anti-patterns that don't, review feedback | Every cycle |
+| `costs.md` | Per-cycle cost estimates and running totals | Every cycle |
+
 ### Clearing Memory
 
 To reset the factory's memory (start fresh):
@@ -186,6 +233,13 @@ Pre-populate `.autocode/memory/lessons.md` with known patterns:
 - `stripe.ts` requires a test API key in `.env.test`
 ```
 
+Lessons are automatically extracted after every cycle:
+- **SUCCESS**: What approach worked (test patterns, mocking strategy)
+- **FAILURE**: What to avoid (anti-patterns, failure reasons)
+- **REVIEWER REJECT**: Quality insights (what the Reviewer caught)
+
+Duplicate lessons are deduplicated automatically — if the same pattern already exists, the timestamp is updated rather than creating a new entry.
+
 ### Marking Files as "Don't Retry"
 
 Add entries to `.autocode/memory/failures.md` to prevent the factory from attempting specific files:
@@ -195,6 +249,51 @@ Add entries to `.autocode/memory/failures.md` to prevent the factory from attemp
 - Reason: This file is scheduled for deletion in Q2
 - Do not attempt coverage improvements
 ```
+
+Files with 3+ failure attempts are also automatically skipped (without needing a PERMANENT SKIP marker). The failure map is rebuilt from `failures.md` at the start of every cycle.
+
+### Interpreting costs.md
+
+The `costs.md` file tracks per-cycle cost estimates:
+
+```markdown
+## Cycle 5 — 2025-01-15T10:30:00Z
+- Target: src/utils/parser.ts
+- Agents: Scout (sonnet) + Architect (sonnet) + Builder (opus) + Tester (sonnet) + Reviewer (opus)
+- Estimated cost: $0.45
+- Running total: $2.10
+```
+
+Use this to:
+- Set budget limits for automated coverage work
+- Compare cost per PR and cost per coverage point
+- Identify which difficulty levels are most cost-efficient
+- Decide when diminishing returns make further automation uneconomical
+
+### Manifest Auto-Refresh
+
+Every 10 successful cycles, the orchestrator re-runs the coverage command on the main worktree and refreshes the manifest's gap data:
+
+- Files exceeding all coverage targets are removed from the gaps array
+- Coverage percentages for remaining files are updated with real measurements
+- New source files (below targets) discovered since bootstrap are added
+- Generated files, test files, type definitions, and config files are excluded
+- Gaps are re-sorted by coverage (ascending) and re-numbered
+
+The refresh is skipped if: no coverage command is configured, the main worktree has uncommitted changes, or a `.autocode/STOP` file exists.
+
+This means manual edits to `coverage.gaps` will be overwritten on the next refresh. To permanently exclude a file, add it to `guardrails.immutable_patterns` or mark it as `PERMANENT SKIP` in `failures.md`.
+
+## Cross-Language Support
+
+Bootstrap (`/autocode-bootstrap`) supports TypeScript, Python, Rust, and Go with specific coverage parser documentation for each:
+
+- **TypeScript/JavaScript**: v8/istanbul output format
+- **Python**: pytest-cov output format
+- **Rust**: tarpaulin output format
+- **Go**: go-cover output format
+
+The coverage tool is detected during bootstrap and recorded in `manifest.coverage.tool`.
 
 ## Running Against Multiple Repos
 
