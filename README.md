@@ -160,21 +160,6 @@ See [docs/customization.md](docs/customization.md) for manifest tuning.
 - [Rust CLI](examples/rust-cli.json)
 - [Go API](examples/go-api.json)
 
-## Dogfood Results
-
-First run against [Ghost v2](https://github.com/ajsai47/ghostv2) (TypeScript monorepo, 1005 tests):
-
-| Cycle | Target | Tests Added | Duration | PR |
-|-------|--------|-------------|----------|-----|
-| 1 | `page-tree.ts` | 69 | ~3 min | [#25](https://github.com/ajsai47/ghostv2/pull/25) |
-| 2 | `heuristic-generator.ts` | 79 | ~7 min | [#26](https://github.com/ajsai47/ghostv2/pull/26) |
-| 3 | `adaptive-selector.ts` | 27 | ~2 min | [#27](https://github.com/ajsai47/ghostv2/pull/27) |
-| 4 | `tinyfish-executor.ts` | 35 | ~5 min | Pending |
-| 5 | `http-executor.ts` | 51 | ~8 min | Pending |
-| 6 | `tool-generator.ts` | 33 | ~5 min | Pending |
-
-**294 tests shipped across 6 cycles, 100% success rate, Level 1 --> Level 2.**
-
 ## Troubleshooting
 
 **"No test command detected"**
@@ -195,7 +180,7 @@ git worktree prune
 ## FAQ
 
 **How much does it cost?**
-Depends on the models you configure. Expect ~$0.50-2.00 per cycle with an Opus builder, or ~$0.10 per cycle with Sonnet everywhere. A full 6-cycle dogfood run cost roughly $5.
+Depends on the models you configure. Expect ~$0.50-2.00 per cycle with an Opus builder, or ~$0.10 per cycle with Sonnet everywhere.
 
 **What languages are supported?**
 Any language with a test runner. Best support for TypeScript, Python, Rust, and Go.
