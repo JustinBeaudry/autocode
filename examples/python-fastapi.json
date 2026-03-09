@@ -16,7 +16,7 @@
     "build": null
   },
   "coverage": {
-    "tool": "coverage.py",
+    "tool": "pytest-cov",
     "current": {
       "statements": 62,
       "branches": 48,
@@ -36,10 +36,6 @@
       { "file": "src/utils/crypto.py", "coverage": 35, "priority": 4 },
       { "file": "src/models/user.py", "coverage": 42, "priority": 5 }
     ]
-  },
-  "scoring": {
-    "formula": "(merge_rate * 0.4) + (coverage_delta * 0.3) + ((1 - regression_rate) * 0.3)",
-    "weights_rationale": "Merge rate highest because shipped > written"
   },
   "guardrails": {
     "immutable_patterns": ["*.config.*", "*.env*", ".github/**", "autocode.manifest.json", "alembic/**"],

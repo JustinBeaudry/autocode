@@ -32,7 +32,7 @@ You receive from the orchestrator:
 4. **Run the test command** from the manifest (`manifest.commands.test`)
 5. **If tests fail**: Fix the test (not the source code), re-run. You get 3 attempts.
 6. **If coverage command exists**: Run the coverage command from the manifest (`manifest.commands.coverage`) and report the delta
-7. **Mutation testing** (if time permits): Temporarily flip a condition in the source, verify your tests catch it, then revert the mutation
+7. **Mutation testing** (if time permits): Verify test quality by checking that your tests fail when key assertions are removed — do NOT modify source files
 
 ## Output
 

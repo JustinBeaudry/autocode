@@ -37,10 +37,6 @@
       { "file": "src/config/loader.rs", "coverage": 35, "priority": 5 }
     ]
   },
-  "scoring": {
-    "formula": "(merge_rate * 0.4) + (coverage_delta * 0.3) + ((1 - regression_rate) * 0.3)",
-    "weights_rationale": "Merge rate highest because shipped > written"
-  },
   "guardrails": {
     "immutable_patterns": ["*.toml", "*.env*", ".github/**", "autocode.manifest.json"],
     "max_files_per_pr": 5,
