@@ -90,6 +90,7 @@ Per-repo memory in `.autocode/memory/` prevents loops and accumulates knowledge:
 | `/autocode` | Run the autonomous code factory |
 | `/autocode-status` | View current factory status and metrics |
 | `/autocode-stop` | Gracefully stop the factory |
+| `/autocode-report` | Generate a shareable summary of factory results |
 
 ## Guardrails
 
