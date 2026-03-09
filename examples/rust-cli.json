@@ -30,11 +30,11 @@
       "lines": 80
     },
     "gaps": [
-      { "file": "src/cli/args.rs", "coverage": 8, "priority": 1 },
-      { "file": "src/commands/deploy.rs", "coverage": 15, "priority": 2 },
-      { "file": "src/commands/init.rs", "coverage": 20, "priority": 3 },
-      { "file": "src/output/formatter.rs", "coverage": 28, "priority": 4 },
-      { "file": "src/config/loader.rs", "coverage": 35, "priority": 5 }
+      { "file": "src/cli/args.rs", "coverage": 8, "priority": 1, "type": "utility", "complexity": "medium" },
+      { "file": "src/commands/deploy.rs", "coverage": 15, "priority": 2, "type": "handler", "complexity": "high" },
+      { "file": "src/commands/init.rs", "coverage": 20, "priority": 3, "type": "handler", "complexity": "medium" },
+      { "file": "src/output/formatter.rs", "coverage": 28, "priority": 4, "type": "pure_function", "complexity": "low" },
+      { "file": "src/config/loader.rs", "coverage": 35, "priority": 5, "type": "utility", "complexity": "medium" }
     ]
   },
   "guardrails": {
@@ -68,5 +68,19 @@
     "builder": "opus",
     "tester": "sonnet",
     "reviewer": "opus"
+  },
+  "work_sources": {
+    "coverage_gaps": true,
+    "github_issues": { "enabled": false, "labels": ["autocode"], "exclude_labels": ["wontfix", "duplicate"] },
+    "backlog": true,
+    "pr_reviews": true,
+    "tech_debt": false
+  },
+  "testing": {
+    "file_pattern": "*.rs (mod tests)",
+    "location": "co-located",
+    "assertion_style": "assert_eq!",
+    "structure": "#[test]",
+    "helpers": []
   }
 }

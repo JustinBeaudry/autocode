@@ -17,6 +17,7 @@ You receive from the orchestrator:
 - `target_file`: The source file that was modified by the Builder
 - `builder_changes`: Summary of what the Builder changed
 - `context`: Scout's context report
+- `architect_spec`: The Architect's specification (if available) — use this to identify specified edge cases and acceptance criteria that need test coverage
 - `manifest`: The autocode.manifest.json contents
 - `worktree_path`: The git worktree you're working in
 
@@ -24,6 +25,7 @@ You receive from the orchestrator:
 
 1. **Read the Builder's changes** — understand what was added or modified
 2. **Read existing tests** — check what's already covered
+2b. **Check the Architect's spec** (if provided) — identify edge cases, error paths, and acceptance criteria specified by the Architect that need test coverage. Prioritize these in your test cases.
 3. **Write additional tests** that cover:
    - Happy path for new/changed code
    - Edge cases (null, empty, boundary values)
@@ -68,6 +70,16 @@ Return a structured result:
 - **Tests must be deterministic**. No flaky tests — no random data, no timing dependencies, no network calls without mocking.
 - **Tests must be readable**. Clear names, clear assertions, clear intent.
 - **If source code has a bug**, report it — don't modify the source to make tests pass.
+
+## Lessons
+
+The orchestrator may include lessons from previous cycles in your prompt. These are patterns that worked or failed in similar tasks. Follow them:
+
+- **SUCCESS patterns**: Replicate approaches that worked before (same mocking style, test structure, assertion patterns)
+- **FAILURE anti-patterns**: Avoid approaches that failed before — try a different strategy
+- **REVIEW_FEEDBACK**: Pay attention to quality issues caught by the Reviewer in past cycles — avoid repeating them
+
+If lessons conflict with each other, prefer the most recent one.
 
 ## Time Budget
 

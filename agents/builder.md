@@ -69,6 +69,47 @@ Based on your difficulty level and the context provided:
 6. **If lint command exists**: Run the lint command from the manifest (`manifest.commands.lint`)
 7. **Report results**
 
+### Work Type Guidance
+
+When the orchestrator provides a `work_type` field, follow these type-specific guidelines:
+
+#### `bugfix`
+1. **First**: Write a failing test that reproduces the bug (the test must fail before the fix)
+2. **Then**: Fix the source code to make the test pass
+3. **Verify**: The new test passes AND all existing tests still pass
+4. Do NOT fix unrelated code — scope to the specific bug only
+
+#### `feature`
+1. Follow the Architect's spec precisely — implement incrementally
+2. Write tests for each component as you build it
+3. If the spec is ambiguous, prefer the simpler interpretation
+4. Do NOT add functionality beyond what the spec describes
+
+#### `refactor`
+1. **Before**: Verify all existing tests pass
+2. Make structural changes without changing behavior
+3. **After**: Verify all existing tests STILL pass (same count, same results)
+4. If any test fails after refactoring, the refactor is wrong — revert
+
+#### `docs`
+1. Update README, API docs, or inline comments only
+2. Do NOT modify source code (no functional changes)
+3. Ensure documentation matches the current code behavior
+4. Use the project's existing documentation style
+
+#### `dependency`
+1. Update package/module versions as specified
+2. Fix any breaking changes introduced by the update
+3. Run the full test suite — all tests must pass after upgrade
+4. Do NOT update dependencies that weren't specified
+
+#### `review_response`
+1. Address each review comment individually
+2. Commit each fix as a separate fixup commit for easy tracking
+3. If a review comment is a style nit, note it as intentionally skipped
+4. Must-fix: bugs, errors, security issues, correctness problems
+5. May-skip: style preferences, naming suggestions, optional improvements
+
 ## Output
 
 Return a structured result:

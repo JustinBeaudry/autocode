@@ -30,11 +30,11 @@
       "lines": 80
     },
     "gaps": [
-      { "file": "packages/core/src/handlers/auth.ts", "coverage": 5, "priority": 1 },
-      { "file": "packages/core/src/db/queries.ts", "coverage": 11, "priority": 2 },
-      { "file": "packages/core/src/billing/stripe.ts", "coverage": 15, "priority": 3 },
-      { "file": "packages/core/src/handlers/tools.ts", "coverage": 22, "priority": 4 },
-      { "file": "packages/core/src/cache/redis.ts", "coverage": 30, "priority": 5 }
+      { "file": "packages/core/src/handlers/auth.ts", "coverage": 5, "priority": 1, "type": "handler", "complexity": "high" },
+      { "file": "packages/core/src/db/queries.ts", "coverage": 11, "priority": 2, "type": "service", "complexity": "high" },
+      { "file": "packages/core/src/billing/stripe.ts", "coverage": 15, "priority": 3, "type": "service", "complexity": "high" },
+      { "file": "packages/core/src/handlers/tools.ts", "coverage": 22, "priority": 4, "type": "handler", "complexity": "medium" },
+      { "file": "packages/core/src/cache/redis.ts", "coverage": 30, "priority": 5, "type": "infrastructure", "complexity": "medium" }
     ]
   },
   "guardrails": {
@@ -68,5 +68,19 @@
     "builder": "opus",
     "tester": "sonnet",
     "reviewer": "opus"
+  },
+  "work_sources": {
+    "coverage_gaps": true,
+    "github_issues": { "enabled": false, "labels": ["autocode"], "exclude_labels": ["wontfix", "duplicate"] },
+    "backlog": true,
+    "pr_reviews": true,
+    "tech_debt": false
+  },
+  "testing": {
+    "file_pattern": "*.test.ts",
+    "location": "co-located",
+    "assertion_style": "expect/toBe",
+    "structure": "describe/it",
+    "helpers": []
   }
 }

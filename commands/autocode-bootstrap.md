@@ -119,6 +119,19 @@ Run the test command once to verify it works. If tests fail, warn the user but c
 
 Use Bash to run the test command. Capture the output.
 
+### 5b. Detect Testing Conventions
+
+Analyze existing test files to record testing patterns:
+
+1. **Find test files**: Use Glob to find files matching `*.test.*`, `*.spec.*`, `*_test.*`, `test_*.*`
+2. **Sample 2-3 test files**: Read them to detect:
+   - **File pattern**: How test files are named (e.g., `*.test.ts`, `*_test.py`)
+   - **Location**: Co-located with source (`src/foo.test.ts`) or in a separate directory (`tests/test_foo.py`, `__tests__/foo.test.ts`)
+   - **Assertion style**: What assertion library/style is used (e.g., `expect/toBe` for vitest/jest, `assert` for pytest, `assert_eq!` for Rust)
+   - **Structure**: How tests are organized (e.g., `describe/it`, `test()`, `#[test]`, `def test_`)
+   - **Helpers**: Any shared test utilities or fixtures (e.g., `src/test/helpers.ts`, `conftest.py`, `test_utils.rs`)
+3. **Record in manifest**: Store detected patterns in the `testing` section (see Step 10)
+
 ### 6. Run Coverage
 
 If a coverage command exists (detected or just installed), run it. Parse the output to extract:
@@ -152,6 +165,30 @@ Filter out:
 - Config files
 - Type definition files (`.d.ts`)
 - Generated files
+
+### 7b. Classify Gap Files
+
+For each file in the coverage gaps array, classify its type and estimate complexity:
+
+**Types** (inspect the file's exports and structure):
+- `pure_function`: File exports only pure functions (no side effects, no external calls)
+- `utility`: Helper/utility functions, may have light side effects
+- `handler`: Request handler, route handler, or controller
+- `service`: Business logic with external dependencies (DB, API, cache)
+- `middleware`: Middleware, interceptors, or pipeline stages
+- `infrastructure`: Database, cache, queue, or external service wrappers
+
+**Complexity** (based on dependencies and structure):
+- `low`: < 100 lines, few imports, no external dependencies
+- `medium`: 100-300 lines, some imports, light external dependencies
+- `high`: 300+ lines, many imports, heavy external dependencies or complex logic
+
+Add `type` and `complexity` fields to each gap entry:
+```json
+{ "file": "src/utils/parser.ts", "coverage": 15, "priority": 1, "type": "pure_function", "complexity": "low" }
+```
+
+This classification helps the orchestrator route work items to the right difficulty level and skip files that are too complex for the current level.
 
 ### 8. Detect CI
 
@@ -224,9 +261,39 @@ Assemble the `autocode.manifest.json` with all detected values. Use sensible def
     "builder": "opus",
     "tester": "sonnet",
     "reviewer": "opus"
+  },
+  "work_sources": {
+    "coverage_gaps": true,
+    "github_issues": {
+      "enabled": false,
+      "labels": ["autocode"],
+      "exclude_labels": ["wontfix", "duplicate"]
+    },
+    "backlog": true,
+    "pr_reviews": true,
+    "tech_debt": false
+  },
+  "testing": {
+    "file_pattern": "<detected>",
+    "location": "<detected: co-located | separate>",
+    "assertion_style": "<detected>",
+    "structure": "<detected>",
+    "helpers": []
   }
 }
 ```
+
+### 10b. Prompt for Work Sources
+
+Ask the user about enabling additional work sources:
+
+"Enable GitHub Issues integration? Issues labeled 'autocode' will be picked up as work items. (Default: no)"
+
+If yes, set `work_sources.github_issues.enabled` to `true`.
+
+"Enable tech debt scanning? AutoCode will scan for TODO/FIXME comments and create low-priority work items. (Default: no)"
+
+If yes, set `work_sources.tech_debt` to `true`.
 
 ### 11. Present for Review
 

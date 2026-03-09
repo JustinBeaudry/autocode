@@ -87,6 +87,16 @@ Return a structured spec:
 - **Stay within guardrails**. If the optimal change exceeds the file/line limits, scope it down.
 - **Check the failures memory**. If previous attempts failed on this target, avoid the same approach.
 
+## Lessons
+
+The orchestrator may include lessons from previous cycles in your prompt. These are patterns that worked or failed in similar tasks. Follow them:
+
+- **SUCCESS patterns**: Replicate approaches that worked before (same mocking style, test structure, assertion patterns)
+- **FAILURE anti-patterns**: Avoid approaches that failed before — try a different strategy
+- **REVIEW_FEEDBACK**: Pay attention to quality issues caught by the Reviewer in past cycles — avoid repeating them
+
+If lessons conflict with each other, prefer the most recent one.
+
 ## Time Budget
 
 You have a time budget defined in the manifest (`manifest.time_budgets.architect_seconds`). A good spec is concise and complete — don't over-think it.

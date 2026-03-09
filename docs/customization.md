@@ -143,6 +143,93 @@ Control concurrent pipeline execution:
 - A dependency conflict graph prevents parallel work on files that share imports
 - Memory updates are batched — all writes happen after all pipelines complete
 
+### Work Sources
+
+Control which work sources AutoCode pulls from:
+
+```json
+{
+  "work_sources": {
+    "coverage_gaps": true,
+    "github_issues": {
+      "enabled": true,
+      "labels": ["autocode"],
+      "exclude_labels": ["wontfix", "duplicate"]
+    },
+    "backlog": true,
+    "pr_reviews": true,
+    "tech_debt": false
+  }
+}
+```
+
+- **coverage_gaps** (default: true): Include files from the manifest's coverage gaps array
+- **github_issues**: When enabled, issues with the specified labels are ingested as work items. Issue labels determine work type (`bug` → bugfix, `feature` → feature, etc.)
+- **backlog** (default: true): Read `.autocode/backlog.md` for manually defined tasks
+- **pr_reviews** (default: true): Pick up unaddressed review comments on AutoCode PRs
+- **tech_debt** (default: false): Scan for TODO/FIXME comments as low-priority work items
+
+### Backlog Format
+
+Create `.autocode/backlog.md` to define work items manually:
+
+```markdown
+## Task: Add rate limiting to /api/users endpoint
+- Type: feature
+- Priority: 2
+- Files: src/routes/users.ts, src/middleware/rate-limit.ts
+- Description: The /api/users endpoint has no rate limiting. Add a rate limiter middleware using the existing Redis connection.
+
+## Task: Fix timezone handling in date formatter
+- Type: bugfix
+- Priority: 1
+- Files: src/utils/dates.ts
+- Description: The `formatDate` function doesn't handle UTC offsets correctly. It assumes local timezone.
+```
+
+Each `## Task:` section is parsed into a work item. Fields:
+- **Type**: `feature`, `bugfix`, `refactor`, `docs`, `dependency`
+- **Priority**: 1 (highest) to 5 (lowest)
+- **Files**: Comma-separated file paths
+- **Description**: What needs to be done
+
+### Focus Queue
+
+Use `/autocode-focus` to override the work queue priority:
+
+```
+/autocode-focus src/auth.ts           → Queue file for next cycle
+/autocode-focus "Fix login timeout"   → Queue task description
+/autocode-focus --list                → Show current queue
+/autocode-focus --clear               → Clear queue
+```
+
+Focus items always take priority over all other work sources.
+
+### Testing Conventions
+
+The bootstrap step detects testing conventions and stores them in the manifest:
+
+```json
+{
+  "testing": {
+    "file_pattern": "*.test.ts",
+    "location": "co-located",
+    "assertion_style": "expect/toBe",
+    "structure": "describe/it",
+    "helpers": ["src/test/helpers.ts"]
+  }
+}
+```
+
+These values are auto-detected by `/autocode-bootstrap`. You can override them:
+
+- **file_pattern**: How test files are named
+- **location**: `co-located` (next to source) or `separate` (in a `tests/` directory)
+- **assertion_style**: The assertion library and pattern used
+- **structure**: How tests are organized (`describe/it`, `test()`, `#[test]`, `def test_`)
+- **helpers**: Paths to shared test utilities that agents should import
+
 ### Diminishing Returns Override
 
 By default, the factory stops when the last 5 successful coverage deltas are all < 0.5%. To override this:

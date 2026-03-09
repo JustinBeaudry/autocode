@@ -30,11 +30,11 @@
       "lines": 80
     },
     "gaps": [
-      { "file": "src/routes/auth.py", "coverage": 12, "priority": 1 },
-      { "file": "src/services/payment.py", "coverage": 18, "priority": 2 },
-      { "file": "src/middleware/rate_limit.py", "coverage": 25, "priority": 3 },
-      { "file": "src/utils/crypto.py", "coverage": 35, "priority": 4 },
-      { "file": "src/models/user.py", "coverage": 42, "priority": 5 }
+      { "file": "src/routes/auth.py", "coverage": 12, "priority": 1, "type": "handler", "complexity": "high" },
+      { "file": "src/services/payment.py", "coverage": 18, "priority": 2, "type": "service", "complexity": "high" },
+      { "file": "src/middleware/rate_limit.py", "coverage": 25, "priority": 3, "type": "middleware", "complexity": "medium" },
+      { "file": "src/utils/crypto.py", "coverage": 35, "priority": 4, "type": "utility", "complexity": "low" },
+      { "file": "src/models/user.py", "coverage": 42, "priority": 5, "type": "pure_function", "complexity": "low" }
     ]
   },
   "guardrails": {
@@ -68,5 +68,19 @@
     "builder": "opus",
     "tester": "sonnet",
     "reviewer": "opus"
+  },
+  "work_sources": {
+    "coverage_gaps": true,
+    "github_issues": { "enabled": false, "labels": ["autocode"], "exclude_labels": ["wontfix", "duplicate"] },
+    "backlog": true,
+    "pr_reviews": true,
+    "tech_debt": false
+  },
+  "testing": {
+    "file_pattern": "test_*.py",
+    "location": "separate",
+    "assertion_style": "assert",
+    "structure": "def test_",
+    "helpers": ["tests/conftest.py"]
   }
 }

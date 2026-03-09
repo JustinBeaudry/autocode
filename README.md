@@ -3,9 +3,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Claude Code](https://img.shields.io/badge/Built%20for-Claude%20Code-blueviolet)](https://docs.anthropic.com/en/docs/claude-code)
 
-> Turn any repo into a self-improving codebase. Zero dependencies. Zero config files. Just Claude Code.
+> Your repo's engineering department. Features, bugs, coverage, refactoring — from a unified work queue. Zero dependencies. Just Claude Code.
 
-A team of specialized AI agents run in a continuous loop -- discovering work, implementing code, writing tests, reviewing PRs, and shipping merges -- all unattended.
+A team of 5 constrained AI agents pull from a unified work queue — GitHub Issues, coverage gaps, backlog tasks, PR reviews — and run the full pipeline: Scout → Architect → Builder → Tester → Reviewer → Ship. All unattended.
 
 Inspired by [Karpathy's autoresearch](https://x.com/karpathy/status/1886192184808149383). Built for [Claude Code's auto-accept mode](https://docs.anthropic.com/en/docs/claude-code).
 
@@ -34,13 +34,17 @@ cd ~/your-project
 
 ```mermaid
 graph TD
-  M[autocode.manifest.json] --> O[Orchestrator]
+  WQ[Work Queue] --> O[Orchestrator]
+  GI[GitHub Issues] --> WQ
+  CG[Coverage Gaps] --> WQ
+  BL[Backlog] --> WQ
+  PR[PR Reviews] --> WQ
   O --> S[Scout - read only]
   S -->|context| A[Architect - spec only]
   A -->|spec| B[Builder - source + tests]
   B -->|changes| T[Tester - tests only]
   T -->|coverage| R[Reviewer - approve/reject]
-  R -->|approved| PR[PR Created & Merged]
+  R -->|approved| Ship[PR Created]
   R -->|rejected| B
 ```
 
@@ -66,12 +70,12 @@ Each agent has strict boundaries:
 
 Starts with easy wins, graduates to harder tasks:
 
-1. Pure function coverage (no mocking)
-2. Utility/helper coverage (light mocking)
-3. Fix existing failing tests
-4. Integration coverage (DB, API mocks)
-5. Feature implementation from tickets
-6. Refactoring with behavior preservation
+1. Simple tests — pure function coverage
+2. Standard tests — utility coverage with light mocking
+3. Bug fixes — coverage + bugfix from issues
+4. Integration work — services, handlers, small features
+5. Feature work — features, refactoring from issues
+6. Complex changes — all work types enabled
 
 ### Memory System
 
@@ -91,6 +95,8 @@ Per-repo memory in `.autocode/memory/` prevents loops and accumulates knowledge:
 | `/autocode` | Run the autonomous code factory |
 | `/autocode-status` | View current factory status and metrics |
 | `/autocode-stop` | Gracefully stop the factory |
+| `/autocode-focus` | Manage the priority work queue |
+| `/autocode-next` | Preview the next cycle (dry run) |
 | `/autocode-report` | Generate a shareable summary of factory results |
 
 ## Guardrails
@@ -154,6 +160,12 @@ Any language with a test runner. Best support for TypeScript, Python, Rust, and 
 
 **Can it break my code?**
 Every change runs in an isolated git worktree. Failed cycles are cleaned up automatically. PRs are created for review before merging -- nothing lands on `main` without your approval.
+
+**Can it implement features?**
+Yes, at Level 3+ with GitHub Issues integration enabled. Create an issue with the `autocode` label and a `feature` or `bug` label. AutoCode will pick it up, design a spec, implement it, test it, and ship a PR.
+
+**What work sources does it support?**
+Coverage gaps (default), GitHub Issues (opt-in), `.autocode/backlog.md` (manual tasks), PR review responses (auto), TODO/FIXME scanning (opt-in). Use `/autocode-focus` to override priorities.
 
 **How do I customize it?**
 Edit `autocode.manifest.json` or the agent files directly. See [docs/customization.md](docs/customization.md) for details.

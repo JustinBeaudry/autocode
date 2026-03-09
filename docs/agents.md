@@ -18,7 +18,7 @@ All agents reference manifest values directly (e.g., `manifest.commands.coverage
 **Cannot use**: Write, Edit, NotebookEdit
 
 **Input**:
-- Target file path
+- Work item (type, description, target files, source)
 - Manifest contents
 - Previous failure memory
 
@@ -28,6 +28,7 @@ All agents reference manifest values directly (e.g., `manifest.commands.coverage
 - Dependency graph
 - Project testing patterns
 - Previous failure notes
+- Work item context (type, source, scope, related files)
 - Recommendations
 
 **Model**: Sonnet (default via `manifest.model_routing.scout`). Note: avoid Haiku — it fails on repos with many MCP tools due to schema size limits. Sonnet is the safe default.
@@ -66,6 +67,8 @@ All agents reference manifest values directly (e.g., `manifest.commands.coverage
 
 **Skipped at Level 1-2**: Simple coverage work doesn't need a spec. The Builder works from Scout context (or inline context) directly. Architect is spawned at Level 3+.
 
+**Lessons**: Receives relevant lessons from previous cycles (matching file type, test framework, module type). Success patterns should be replicated; failure anti-patterns should be avoided.
+
 **Time budget**: 180 seconds (default)
 
 ---
@@ -87,6 +90,7 @@ All agents reference manifest values directly (e.g., `manifest.commands.coverage
 - Difficulty level
 - Failure context (if target has 1-2 previous failures — describes failed approaches to avoid)
 - Relevant lessons from `.autocode/memory/lessons.md` (matched by file type, test framework, module type)
+- Work type guidance (type-specific instructions: bugfix, feature, refactor, docs, dependency, review_response)
 
 **Output**: Implementation result (SUCCESS/FAILURE) including:
 - Files changed with descriptions
@@ -100,6 +104,14 @@ All agents reference manifest values directly (e.g., `manifest.commands.coverage
 - Must follow project conventions
 - Cannot add new dependencies
 - Cannot exceed file/line change limits
+
+**Work Types**: The Builder handles different work types with type-specific guidance:
+- `bugfix`: Write failing test first, then fix
+- `feature`: Follow Architect spec, implement incrementally
+- `refactor`: Verify tests before AND after changes
+- `docs`: Documentation only, no source changes
+- `dependency`: Update versions, fix breaking changes
+- `review_response`: Address review comments, commit as fixups
 
 **On Reviewer rejection**: Gets one retry with structured feedback. The retry prompt includes the original task, previous implementation summary, and the Reviewer's specific feedback. The Builder works in the same worktree (not a new one).
 
@@ -124,6 +136,7 @@ All agents reference manifest values directly (e.g., `manifest.commands.coverage
 - Scout's context report
 - Manifest contents
 - Worktree path
+- Architect's specification (if available) — for edge case and acceptance criteria coverage
 
 **Output**: Test result (SUCCESS/FAILURE) including:
 - Tests written
@@ -134,6 +147,8 @@ All agents reference manifest values directly (e.g., `manifest.commands.coverage
 **Model**: Sonnet (default via `manifest.model_routing.tester`)
 
 **Skipped at Level 1-2 for pure functions**: The Builder already writes comprehensive tests for simple coverage work. Tester is spawned at Level 3+, or when the Builder made source code changes (not just test files).
+
+**Lessons**: Receives relevant lessons from previous cycles. Uses them to replicate successful testing patterns and avoid approaches that failed before.
 
 **Time budget**: 600 seconds (default)
 
@@ -154,6 +169,7 @@ All agents reference manifest values directly (e.g., `manifest.commands.coverage
 - Scout's context report
 - Builder's result
 - Tester's result (if applicable)
+- Architect's specification (if available) — for spec compliance checking
 
 **Output**: Verdict (APPROVE/REJECT) including:
 - Review checklist results (correctness, safety, scope, quality, test quality)
@@ -168,6 +184,10 @@ All agents reference manifest values directly (e.g., `manifest.commands.coverage
 
 **On retry review**: The Reviewer receives a flag indicating this is a retry, along with the original feedback. It verifies that every item in the original feedback was addressed. Partial fixes result in a second REJECT.
 
+**Spec Compliance**: When an Architect spec is provided, the Reviewer validates that the implementation matches the specification, all acceptance criteria are met, and specified edge cases are covered in tests.
+
+**Lessons**: Receives relevant lessons from previous cycles. Watches for recurring quality issues from previous reviews.
+
 **Model**: Opus (default via `manifest.model_routing.reviewer`)
 
 **Time budget**: 300 seconds (default)
@@ -177,34 +197,33 @@ All agents reference manifest values directly (e.g., `manifest.commands.coverage
 ```
 Orchestrator
     |
-    |--- [Select target + parse failure memory]
+    |--- [Build work queue (focus, issues, gaps, backlog, reviews, tech debt)]
+    |--- [Prioritize and select work item]
+    |--- [Route: configure pipeline per work type]
     |
-    |--- Scout (L3+ only) -----.
-    |    (context report)       |
-    |                           v
-    |--- Architect (L3+ only) <-- Scout's context
-    |    (spec)                 |
-    |                           v
-    |--- Builder <-- Architect's spec (L3+) or inline context (L1-2)
-    |    (implementation)       |         + failure context + lessons
-    |                           v
-    |--- Tester (L3+ or src changes) <-- Builder's changes
-    |    (additional tests)     |
-    |                           v
-    |--- Reviewer <-- Full diff + Builder result + Tester result
+    |--- Scout (if enabled) -----.
+    |    (context report)         |
+    |                             v
+    |--- Architect (if enabled) <-- Scout's context + work item
+    |    (spec)                   |
+    |                             v
+    |--- Builder <-- Architect's spec (or inline context)
+    |    (implementation)         |         + failure context + lessons + work type guidance
+    |                             v
+    |--- Tester (if enabled) <-- Builder's changes + Architect spec
+    |    (additional tests)       |
+    |                             v
+    |--- Reviewer (if enabled) <-- Full diff + Builder + Tester + Architect spec
     |    (verdict)
     |         |
-    |         |--- APPROVE --> Ship PR --> Monitor CI
+    |         |--- APPROVE --> Ship PR (or update existing PR for review_response)
     |         |
-    |         |--- REJECT (1st) --> Builder retry (same worktree)
+    |         |--- REJECT (1st) --> Builder retry
     |         |                         |
     |         |                         v
-    |         |                     Re-run tests --> [Re-run Tester] --> Reviewer (2nd)
-    |         |                                                             |
-    |         |                                           APPROVE ----------+---> Ship PR
-    |         |                                           REJECT (2nd) -----+---> Abandon
+    |         |                     Re-run pipeline --> Reviewer (2nd)
     |         |
-    |         |--- HARD REJECT (immutable violation) --> Abandon immediately
+    |         |--- HARD REJECT --> Abandon immediately
     |
     |--- [Update memory: velocity, coverage, fixes/failures, lessons, costs]
     |

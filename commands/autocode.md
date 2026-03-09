@@ -1,6 +1,6 @@
 # /autocode — Autonomous Code Factory
 
-You are the AutoCode Orchestrator. You run a continuous cycle of work — selecting targets, spawning agents, shipping PRs — all autonomously.
+You are the AutoCode Orchestrator. You run a continuous cycle of work — selecting targets from a unified work queue, spawning agents, shipping PRs — all autonomously.
 
 ## Prerequisites
 
@@ -9,48 +9,169 @@ Before starting, verify:
 2. Read the manifest and validate it has the required fields (`version`, `repo`, `commands`, `guardrails`).
 3. The `.autocode/memory/` directory exists. If not, create it with empty memory files.
 
+### Step 0: Verify Prerequisites
+
+Before the cycle loop:
+1. Verify `git` is available and this is a git repo
+2. Verify `gh` is authenticated: `gh auth status`
+3. Verify `git worktree` works: `git worktree list`
+4. Run the test command once — if it fails, warn but continue
+5. If a coverage command exists, run it once to verify parseable output
+6. Check that `.autocode/STOP` does not exist (from a previous session)
+
+Fail fast with actionable messages:
+```
+Prerequisites:
+  ✓ Git repo detected
+  ✓ GitHub CLI authenticated
+  ✓ Git worktree supported
+  ✓ Test command works: <command>
+  ✗ Coverage command failed: <error>
+    → Fix: <suggestion>
+```
+
+If `gh auth status` fails, stop with: "GitHub CLI not authenticated. Run `gh auth login` first."
+
 ## The Cycle Loop
 
 Each cycle follows this sequence:
 
-### Step 1: Select Target
+### Step 1: Build Work Queue
 
-#### 1a. Parse failures.md
+Build a unified work queue from multiple sources, then select the highest-priority item.
 
+#### 1a. Check focus override
+If `.autocode/focus` exists, read it. Each line is a file path or task description. The first entry becomes the highest-priority work item. After selection, remove the selected line from the file (if it was the last line, delete the file).
+
+For each focus item, infer the work type:
+- If it looks like a file path and is in the manifest's coverage gaps → type: `coverage`
+- If it looks like a file path but not in gaps → type: `feature` (needs investigation)
+- If it's a task description → type: `feature` (default)
+
+#### 1b. Ingest GitHub Issues
+If `manifest.work_sources.github_issues.enabled` is true:
+```bash
+gh issue list --label "autocode" --state open --json number,title,body,labels --limit 10
+```
+
+Filter out issues with any label in `manifest.work_sources.github_issues.exclude_labels`.
+
+Parse each issue into a work item:
+- **Type**: Infer from labels:
+  - `bug` → `bugfix`
+  - `feature` or `enhancement` → `feature`
+  - `refactor` → `refactor`
+  - `docs` or `documentation` → `docs`
+  - No type label → `feature` (default)
+- **Priority**: From issue labels:
+  - `priority:critical` = 1
+  - `priority:high` = 2
+  - Default = 3
+- **Target files**: Extract file paths mentioned in the issue body (look for paths with `/` and file extensions)
+- **Description**: Issue title + body
+- **Source**: `github_issue`
+- **Reference**: `GH #<number>`
+
+#### 1c. Ingest coverage gaps
+If `manifest.work_sources.coverage_gaps` is true (default):
+
+Read `manifest.coverage.gaps` array. For each gap, apply skip rules (from failure history):
+
+##### Parse failures.md
 Read `.autocode/memory/failures.md`. Build a failure map by scanning each `## <file>` section:
 
 For each section headed `## <file> — <timestamp>`:
-- Count the number of `- Attempt:` entries across ALL sections for that file (multiple sections = multiple attempts)
+- Count the number of `- Attempt:` entries across ALL sections for that file
 - Record the most recent timestamp for that file
-- Check for a `PERMANENT SKIP` marker anywhere in the file's sections
+- Check for a `PERMANENT SKIP` marker
 
 Result: a map of `{file_path: {attempt_count, last_attempt_timestamp, permanent_skip}}`.
 
-#### 1b. Apply skip rules
+##### Apply skip rules
+For each gap, check the failure map and apply these rules in order:
 
-Read the manifest's `coverage.gaps` array. For each gap, check the failure map and apply these rules in order:
-
-1. **Permanent skip**: If the file has a `PERMANENT SKIP` marker in failures.md → SKIP always
-2. **Too many failures**: If the file has 3+ total failure attempts → SKIP (too hard at current level)
-3. **Cooldown**: If the file was attempted in the last 2 cycles (compare its `last_attempt_timestamp` against the last 2 cycle timestamps in `.autocode/memory/velocity.md`) → SKIP
+1. **Permanent skip**: If the file has a `PERMANENT SKIP` marker → SKIP always
+2. **Too many failures**: If the file has 3+ total failure attempts → SKIP
+3. **Cooldown**: If the file was attempted in the last 2 cycles → SKIP
 4. **Immutable**: If the file is in the manifest's immutable patterns list → SKIP
-5. **Already at target**: If the file's coverage percentage in the gaps array already meets ALL coverage targets from `manifest.coverage.targets` → SKIP
+5. **Already at target**: If the file's coverage meets ALL coverage targets → SKIP
+6. **Difficulty mismatch**: If the file's `type`/`complexity` doesn't match the current difficulty level (see Difficulty Level Filtering below) → SKIP
 
-Pick the highest-priority gap that passes all rules.
+Each passing gap becomes a `coverage` type work item with:
+- **Priority**: 3 (default, adjusted by file priority in gaps array)
+- **Target files**: The gap file
+- **Source**: `coverage_gap`
 
-#### 1c. Log skip decisions
+#### 1d. Ingest backlog
+If `manifest.work_sources.backlog` is true and `.autocode/backlog.md` exists:
 
-Include skip decisions in the cycle summary output:
-
+Parse each `## Task:` section into a work item:
+```markdown
+## Task: Add rate limiting to /api/users endpoint
+- Type: feature
+- Priority: 2
+- Files: src/routes/users.ts, src/middleware/rate-limit.ts
+- Description: The /api/users endpoint has no rate limiting...
 ```
-Skipped targets:
-  - src/foo.ts: 3 failures (skip threshold)
-  - src/bar.ts: attempted 1 cycle ago (cooldown)
-  - src/qux.ts: PERMANENT SKIP
-Selected: src/baz.ts (0 previous failures)
+
+Each field maps directly to a work item. Source: `backlog`.
+
+#### 1e. Ingest PR review feedback
+If `manifest.work_sources.pr_reviews` is true:
+```bash
+gh pr list --label "autocode" --state open --json number,title,reviews,reviewDecision
 ```
 
-#### 1d. Prepare failure context for selected target
+For PRs with `reviewDecision` of `CHANGES_REQUESTED` or with pending review comments:
+- Create a `review_response` work item
+- **Priority**: 2 (unblock existing PRs before creating new ones)
+- **Target files**: Files changed in the PR
+- **Description**: The review feedback
+- **Source**: `pr_review`
+- **Reference**: `PR #<number>`
+
+#### 1f. Ingest tech debt signals (optional)
+If `manifest.work_sources.tech_debt` is true:
+
+Scan source files for `TODO:` and `FIXME:` comments (limit to files in the coverage gaps or recently changed files):
+```bash
+grep -rn "TODO:\|FIXME:" <src_dirs> --include="*.<lang_ext>" | head -20
+```
+
+Each TODO/FIXME with enough context (more than just "TODO: fix this") becomes a work item:
+- **Type**: `bugfix` (for FIXME) or `feature` (for TODO)
+- **Priority**: 5 (lowest — tech debt is background work)
+- **Source**: `tech_debt`
+
+#### 1g. Prioritize and select
+
+Sort all work items by:
+1. Focus overrides first (user-specified, highest priority)
+2. Review responses second (unblock existing PRs before creating new ones)
+3. Bugfixes with `priority:critical` (priority = 1) or `priority:high` (priority = 2)
+4. Features and coverage items by their priority number
+5. Tech debt and docs at the bottom
+
+Apply the skip rules (failure count, cooldown, etc.) to all items that have target files.
+
+Select the top item. Log the work queue state:
+```
+Work queue (12 items):
+  [1] review_response: Address review on PR #42 (src/auth.ts)
+  [2] bugfix: Fix null pointer in payment handler (GH #15)
+  [3] coverage: src/utils/parser.ts (15% → target 80%)
+  [4] feature: Add webhook retry logic (GH #12)
+  ...
+Selected: [1] review_response — PR #42
+```
+
+#### 1h. No target available
+
+If no suitable target exists after applying all skip rules:
+- If all items have been attempted or skipped, report "All work items have been attempted or skipped. Add new items via GitHub Issues, `.autocode/backlog.md`, or run `/autocode-bootstrap` to refresh coverage gaps."
+- Stop the loop.
+
+#### 1i. Prepare failure context for selected target
 
 If the selected target has 1-2 previous failures, extract the failure details and hold them for Step 4:
 
@@ -62,47 +183,63 @@ If the selected target has 1-2 previous failures, extract the failure details an
 IMPORTANT: Avoid the approaches described above. Try a different strategy.
 ```
 
-If the selected target has 0 previous failures, no failure context is needed.
+#### 1j. Route work item
 
-#### 1e. No target available
+Based on the selected work item's type, configure the pipeline:
 
-If no suitable target exists after applying all skip rules:
-- If all gaps have been attempted or skipped, report "All coverage gaps have been attempted or skipped. Run `/autocode-bootstrap` to refresh the manifest."
-- Stop the loop.
+| Type | Scout | Architect | Builder | Tester | Reviewer |
+|------|-------|-----------|---------|--------|----------|
+| `coverage` (L1-2) | inline | skip | yes | skip | yes |
+| `coverage` (L3+) | yes | yes | yes | yes | yes |
+| `feature` | yes | yes | yes | yes | yes |
+| `bugfix` | yes | optional | yes | yes | yes |
+| `refactor` | yes | yes | yes | yes | yes |
+| `docs` | yes | skip | yes | skip | skip |
+| `dependency` | skip | skip | yes | yes | yes |
+| `review_response` | skip | skip | yes | yes | yes |
+
+Pass the work item's full context (type, description, source, related files, reference) to the first agent in the pipeline.
 
 ### Step 2: Create Worktree
 
 Create an isolated git worktree for this cycle:
 
 ```bash
-BRANCH_NAME="autocode/$(date +%Y%m%d-%H%M%S)-$(basename TARGET_FILE .ts)"
+BRANCH_NAME="autocode/$(date +%Y%m%d-%H%M%S)-$(echo $WORK_ITEM_DESCRIPTION | tr ' ' '-' | head -c 30)"
 git worktree add .autocode/worktrees/$BRANCH_NAME -b $BRANCH_NAME
+```
+
+For `review_response` work items, check out the existing PR branch instead of creating a new one:
+```bash
+gh pr checkout <pr_number> -- .autocode/worktrees/review-pr-<number>
 ```
 
 All agent work happens in this worktree. This keeps the main working tree clean.
 
 ### Step 2b: Measure Baseline Coverage
 
-If the manifest has a coverage command (`manifest.commands.coverage` is not null):
+If the manifest has a coverage command (`manifest.commands.coverage` is not null) and the work type is not `docs`:
 
 1. Run the coverage command in the worktree BEFORE any changes:
    ```bash
    cd <worktree_path> && <coverage_command>
    ```
-2. Parse the output to extract per-file coverage percentages (see the manifest's `coverage.tool` for the output format — v8/istanbul, pytest-cov, tarpaulin, or go-cover)
+2. Parse the output to extract per-file coverage percentages
 3. Record the baseline coverage for the target file specifically
 4. Record the overall coverage percentage
 
-If coverage command is not available, skip this step — coverage deltas will be reported as "N/A".
+If coverage command is not available, skip this step.
 
 ### Step 3: Gather Context (Scout)
 
-**At Level 1-2**: Skip spawning a separate Scout agent. Instead, read the target file, its types/imports, and one existing test file directly using Read/Glob/Grep. The Builder prompt will include this context. This saves an entire agent spawn (~30s) for simple pure-function work where the Builder would read the same files anyway.
+**Skip if pipeline config says "skip" for Scout** (e.g., `coverage` L1-2, `dependency`, `review_response`).
 
-**At Level 3+**: Spawn a Scout agent for deeper analysis:
+**At Level 1-2 for coverage**: Skip spawning a separate Scout agent. Instead, read the target file, its types/imports, and one existing test file directly using Read/Glob/Grep. The Builder prompt will include this context.
+
+**Otherwise**: Spawn a Scout agent:
 - `subagent_type`: "general-purpose"
-- `model`: From `manifest.model_routing.scout` (default: "sonnet"). Note: avoid "haiku" — it may fail on repos with many MCP tools due to schema size limits. Use "sonnet" as the safe default.
-- `prompt`: Include the target file path, manifest contents, and any relevant failure memory
+- `model`: From `manifest.model_routing.scout` (default: "sonnet")
+- `prompt`: Include the work item (type, description, target files, source), manifest contents, and any relevant failure memory
 - The Scout returns a context report
 
 **Lesson injection**: Read `.autocode/memory/lessons.md` and extract the 5 most recent relevant lessons (matching the target file's language, framework, or testing patterns). Include them in the context passed to downstream agents:
@@ -114,52 +251,56 @@ If coverage command is not available, skip this step — coverage deltas will be
 - <lesson 3 summary>
 ```
 
-Relevance is determined by: same file type (e.g., `.ts`), same test framework, similar module type (pure function, utility, integration), or same file previously attempted.
+### Step 3b: Design Spec (Architect)
 
-### Step 3b: Design Spec (Architect) — Level 3+ Only
+**Skip if pipeline config says "skip" for Architect** (e.g., `coverage` L1-2, `docs`, `dependency`, `review_response`).
 
-**At Level 1-2**: Skip the Architect. The Builder works from Scout context directly (simple coverage work doesn't need a spec).
+**Optional for `bugfix`**: Only spawn the Architect if the bug is complex (multiple files involved or unclear fix).
 
-**At Level 3+**: Spawn an Architect agent to design a specification:
+Spawn an Architect agent:
 - `subagent_type`: "general-purpose"
 - `model`: From `manifest.model_routing.architect` (default: "sonnet")
-- `prompt`: Include the target file path, Scout's context report, manifest contents, and current difficulty level
-- The Architect returns a structured spec (target functions, approach, test cases, mocking requirements, acceptance criteria)
+- `prompt`: Include the work item, Scout's context report, manifest contents, and current difficulty level
+- The Architect returns a structured spec
 
-Pass the Architect's spec to the Builder in Step 4 instead of raw Scout context.
+Pass the Architect's spec to the Builder in Step 4 and to the Reviewer and Tester for validation.
 
 ### Step 4: Spawn Builder
 
 Use the Agent tool to spawn a Builder agent:
 - `subagent_type`: "general-purpose"
 - `model`: From `manifest.model_routing.builder` (default: "opus")
-- `prompt`: Include the target file, context (inline Scout context at L1-2, or Architect's spec at L3+), manifest, worktree path, difficulty level, and any failure context from Step 1d
-- **If the target has previous failures** (1-2 attempts from Step 1d), append the failure context block to the Builder prompt so it avoids repeating failed approaches
-- **Lessons**: Include the relevant lessons extracted in Step 3. Append to the Builder prompt:
-  ```
-  ## Lessons from Previous Cycles (follow these)
-  - <pattern that worked or anti-pattern to avoid>
-  ```
+- `prompt`: Include:
+  - The work item (type, description, source, target files)
+  - Context (inline Scout context at L1-2, or Architect's spec at L3+)
+  - Manifest
+  - Worktree path
+  - Difficulty level
+  - Failure context from Step 1i (if applicable)
+  - Work type guidance (the Builder has type-specific instructions for each work type)
 - The Builder returns a result (SUCCESS or FAILURE)
 
-**Model fallback**: If the specified model fails with an API error, retry with "sonnet". Log the fallback in the cycle summary.
+**For `review_response` type**: The Builder prompt must include:
+- The original PR diff for context
+- Each must-fix review comment with its file location
+- Instruction: "Address each review comment. Commit fixes individually for easy tracking."
+
+**Model fallback**: If the specified model fails with an API error, retry with "sonnet".
 
 ### Step 4b: Additional Tests (Tester)
 
-**At Level 1-2 with pure functions**: Skip the Tester — the Builder already writes comprehensive tests for simple coverage work.
+**Skip if pipeline config says "skip" for Tester** (e.g., `coverage` L1-2, `docs`).
 
-**At Level 3+, or when Builder made source code changes**: Spawn a Tester agent:
+Spawn a Tester agent:
 - `subagent_type`: "general-purpose"
 - `model`: From `manifest.model_routing.tester` (default: "sonnet")
-- `prompt`: Include the target file, Builder's change summary, Scout's context, manifest, and worktree path
+- `prompt`: Include the target file, Builder's change summary, Scout's context, Architect's spec (if available), manifest, and worktree path
 - The Tester adds edge case tests, error path tests, and runs coverage measurement
 - The Tester can ONLY modify test files — never source files
 
 If the Tester reports a test failure it cannot fix:
 1. Re-spawn the Builder with the Tester's error output for one fix attempt
 2. If Builder fix fails, proceed to Reviewer with a note about the test issue
-
-Include the Tester's result (coverage delta, tests added) in the Reviewer input.
 
 ### Step 5: Verify and Review
 
@@ -168,19 +309,19 @@ Run the test command in the worktree to verify all tests pass:
 - If tests fail → log as failure, clean up worktree, skip to next cycle
 - If tests pass → proceed to review
 
-If the manifest has a coverage command, run it now to measure post-change coverage:
+If the manifest has a coverage command and the work type is not `docs`, run it now to measure post-change coverage:
 1. Run: `cd <worktree_path> && <coverage_command>`
-2. Parse the output (same format as Step 2b)
-3. Calculate the delta:
-   - Target file delta: `post_coverage - baseline_coverage` for the target file
-   - Overall delta: `post_overall - baseline_overall`
-4. Include both deltas in the Reviewer input and cycle summary
+2. Parse the output
+3. Calculate the delta (target file and overall)
 
 #### 5b. Spawn Reviewer
-Spawn a Reviewer agent as the quality gate:
+
+**Skip if pipeline config says "skip" for Reviewer** (e.g., `docs`).
+
+Spawn a Reviewer agent:
 - `subagent_type`: "general-purpose"
 - `model`: From `manifest.model_routing.reviewer` (default: "opus")
-- `prompt`: Include the worktree path, manifest, Scout's context, Builder's result, and Tester's result (if applicable)
+- `prompt`: Include the worktree path, manifest, Scout's context, Builder's result, Tester's result (if applicable), and Architect's spec (if available, for spec compliance checking)
 - The Reviewer returns a verdict: APPROVE or REJECT
 
 #### 5c. Handle Verdict
@@ -213,46 +354,23 @@ You are RETRYING a previous implementation that was rejected by the Reviewer.
 - If the feedback asks for a different approach, refactor accordingly
 ```
 
-Re-spawn the Builder with this retry prompt. The Builder works in the same worktree (not a new one).
+Re-spawn the Builder with this retry prompt. The Builder works in the same worktree.
 
-**Retry pipeline** — after Builder retry completes, follow this sequence:
-
-1. If Builder reports FAILURE → abandon immediately (do not waste a second review). Log as failure and clean up.
+**Retry pipeline** — after Builder retry completes:
+1. If Builder reports FAILURE → abandon immediately. Log as failure and clean up.
 2. If Builder reports SUCCESS → re-run tests (Step 5a).
 3. If tests fail → abandon. Log as failure and clean up.
-4. If tests pass AND the Tester was run originally (Step 4b) → re-run the Tester in the same worktree. If Tester reports a failure it cannot fix, give the Builder one more fix attempt. If that also fails, proceed to the second review with a note about the test issue.
-5. Re-run Reviewer (Step 5b) — this is the SECOND review. Pass the following flag in the Reviewer prompt:
-   ```
-   This is a RETRY review. The Builder was given this feedback on the first attempt:
-   <original reviewer feedback>
-   Verify that EVERY item in the feedback was addressed. If the Builder ignored or partially addressed any item, REJECT.
-   ```
+4. If tests pass AND the Tester was run originally → re-run the Tester. If Tester fails and Builder can't fix, proceed to second review with a note.
+5. Re-run Reviewer with retry flag.
 
 **On REJECT (second time)**:
 - Log the failure to `.autocode/memory/failures.md` with both rejection reasons
 - Clean up the worktree
 - Move to next cycle
-- Include in failure log:
-  ```
-  ## <file> — <timestamp>
-  - Attempt: <N>
-  - Error: Rejected by Reviewer (2x)
-  - First rejection: <1-2 sentence summary of first feedback>
-  - Second rejection: <1-2 sentence summary of second feedback>
-  - Approach: <what was tried>
-  - Builder retried: YES
-  - Note: Consider a different approach or difficulty level for this file
-  ```
 
 **Hard REJECT (immutable files modified)**:
-- Immediate abandon — no retry, even during a retry attempt
-- If a hard reject occurs during a RETRY (the Builder modified immutable files while addressing feedback), treat it the same: abandon immediately, no further retries
+- Immediate abandon — no retry
 - Log as failure with "IMMUTABLE_VIOLATION" tag
-
-If the Builder reports FAILURE (before reaching review):
-1. Log the failure to `.autocode/memory/failures.md`
-2. Clean up the worktree
-3. Move to next cycle
 
 ### Step 6: Commit and PR
 
@@ -265,7 +383,7 @@ git commit -m "autocode: <Reviewer's suggested PR title, or short description>"
 git push origin $BRANCH_NAME
 ```
 
-Create the `autocode` label if it doesn't exist (idempotent):
+Create the `autocode` label if it doesn't exist:
 ```bash
 gh label create autocode --description "Automated by AutoCode" --color "0E8A16" 2>/dev/null || true
 ```
@@ -275,62 +393,48 @@ Create a PR using `gh pr create`:
 - Body: Use the Reviewer's suggested PR body (if approved), otherwise include Builder's summary. Always end with `🤖 Generated by [AutoCode](https://github.com/ajsai47/autocode)`
 - Labels: `autocode`
 
+**For `review_response` type**: Instead of creating a new PR, push to the existing PR branch and post a comment:
+
+```markdown
+## Review Response
+
+**Fixed:**
+- src/auth.ts:42 — Added null check for user object
+- src/auth.ts:88 — Switched from `any` to proper type
+
+**Intentionally skipped (style/optional):**
+- src/auth.ts:15 — "Consider renaming variable" — existing convention
+
+🤖 Addressed by [AutoCode](https://github.com/ajsai47/autocode)
+```
+
 ### Step 6b: Monitor CI After Merge (Optional)
 
-This step only applies if the PR is auto-merged (e.g., when running with auto-merge enabled). If PRs require manual merge, skip this step.
+This step only applies if the PR is auto-merged. If PRs require manual merge, skip this step.
 
 After the PR is merged to the default branch:
 
 #### 6b-1. Poll CI Status
-Wait for CI to complete on the default branch. Poll every 30 seconds for up to 10 minutes:
+Wait for CI to complete. Poll every 30 seconds for up to 10 minutes:
 
 ```bash
-# Check the latest CI run on the default branch
 gh run list --branch <default_branch> --limit 1 --json status,conclusion,headSha
 ```
 
-If the `headSha` matches the merge commit and the run is complete, check the conclusion.
-
 #### 6b-2. CI Passed
-If `conclusion` is "success" → proceed to Step 7. No action needed.
+If `conclusion` is "success" → proceed to Step 7.
 
 #### 6b-3. CI Failed — Create Revert PR
 If `conclusion` is "failure":
 
-1. **Identify the commit**: Find the merge commit SHA from the PR
-2. **Create revert branch**:
-   ```bash
-   git checkout <default_branch>
-   git pull origin <default_branch>
-   git checkout -b autocode/revert-<original_branch_name>
-   git revert <merge_commit_sha> --no-edit
-   git push -u origin autocode/revert-<original_branch_name>
-   ```
-3. **Create revert PR**:
-   ```bash
-   gh label create revert --description "Revert of a failed change" --color "D93F0B" 2>/dev/null || true
-   gh pr create \
-     --title "revert: autocode change that broke CI (<target_file>)" \
-     --body "## Auto-Revert\n\nCI failed after merging autocode PR #<number>.\n\nOriginal PR: #<number>\nFailure: <link to failed CI run>\n\n🤖 Generated by [AutoCode](https://github.com/ajsai47/autocode)" \
-     --label "autocode,revert"
-   ```
-4. **Log the regression** to `.autocode/memory/failures.md`:
-   ```
-   ## <file> — <timestamp>
-   - Attempt: <N>
-   - Error: CI_REGRESSION — CI failed after merge
-   - CI run: <URL>
-   - Approach: <what was changed>
-   - Reverted: PR #<revert_pr_number>
-   ```
-5. **Downgrade difficulty**: Reduce `manifest.difficulty.current_level` by 1 (minimum 1). A CI regression means the quality bar needs to be higher.
-6. **Reset streak**: Set consecutive success count to 0.
+1. Create revert branch and revert the merge commit
+2. Create revert PR with `autocode` and `revert` labels
+3. Log the regression to failures.md with `CI_REGRESSION` tag
+4. Downgrade difficulty by 1 (minimum 1)
+5. Reset consecutive success streak to 0
 
 #### 6b-4. CI Timeout
-If CI hasn't completed after 10 minutes:
-- Log a warning: "CI monitoring timed out after 10 minutes. Manual check recommended."
-- Proceed to Step 7 — don't block the factory
-- Note in velocity.md: `CI: TIMEOUT (not verified)`
+If CI hasn't completed after 10 minutes, log a warning and proceed.
 
 ### Step 7: Update Memory
 
@@ -340,103 +444,40 @@ After each cycle, update the memory files:
 ```
 ## Cycle <N> — <timestamp>
 - Target: <file>
+- Type: <work_type>
+- Source: <work_source>
 - Result: SUCCESS | FAILURE
 - PR: <URL or "N/A">
 - Duration: <seconds>
 ```
 
-**`.autocode/memory/coverage.md`**: Update per-file coverage tracking:
+**`.autocode/memory/coverage.md`**: Update per-file coverage tracking (same as before — measured deltas when available, N/A otherwise).
 
-If real coverage data was collected (Step 2b and Step 5a):
-```
-## <file> — <timestamp>
-- Before: <X>% (measured)
-- After: <Y>% (measured)
-- Delta: +<Z>%
-- Overall: <A>% → <B>% (+<C>%)
-- PR: <URL>
-```
+**Update manifest gaps**: If real coverage data was collected, update the manifest's gaps array (same as before).
 
-If coverage data was NOT available:
-```
-## <file> — <timestamp>
-- Coverage: N/A (no coverage command configured)
-- Tests added: <count>
-- PR: <URL>
-```
-
-**Update manifest gaps**: If real coverage data was collected, update the manifest's `coverage.gaps` array:
-- For the target file: update its `coverage` percentage to the new measured value
-- If the target file's coverage now exceeds the manifest's `coverage.targets` threshold for its metric, remove it from the gaps array
-- Re-sort gaps by coverage percentage (ascending) and update priority numbers
-- Update `coverage.current` with the new overall coverage percentages
-- Write the updated manifest back to `autocode.manifest.json`
-
-**`.autocode/memory/failures.md`** (on failure): Append:
+**`.autocode/memory/failures.md`** (on failure): Append with work type info:
 ```
 ## <file> — <timestamp>
 - Attempt: <N>
+- Type: <work_type>
+- Source: <work_source>
 - Error: <description>
 - Approach: <what was tried>
 ```
 
-**`.autocode/memory/fixes.md`** (on success): Append:
+**`.autocode/memory/fixes.md`** (on success): Append with work type info:
 ```
 ## <file> — <timestamp>
+- Type: <work_type>
+- Source: <work_source>
 - What: <description of change>
 - Tests added: <count>
 - Coverage delta: +<N>%
 ```
 
-**`.autocode/memory/costs.md`** (after every cycle): Append a cost estimate:
-```
-## Cycle <N> — <timestamp>
-- Target: <file>
-- Agents: <list agents spawned and their models, e.g., "Scout (sonnet) + Builder (opus) + Reviewer (opus)">
-- Estimated cost: $<estimate>
-- Running total: $<sum of all previous cycles + this one>
-```
+**`.autocode/memory/costs.md`**: Same as before.
 
-Cost estimation per agent (based on typical token usage):
-- Haiku agent: ~$0.01
-- Sonnet agent: ~$0.10
-- Opus agent: ~$0.50
-
-Sum the agents spawned in this cycle. For example, a Level 3+ cycle with Scout (sonnet) + Architect (sonnet) + Builder (opus) + Tester (sonnet) + Reviewer (opus) ≈ $0.10 + $0.10 + $0.50 + $0.10 + $0.50 = $1.30.
-
-If the running total exceeds $10 in this session, print a warning: "Cost warning: estimated spend has exceeded $10 this session."
-
-**`.autocode/memory/lessons.md`** (after every cycle): Extract and append lessons learned:
-
-**On SUCCESS**: Extract what worked:
-```
-## Lesson — <timestamp>
-- Target: <file>
-- Type: SUCCESS
-- Pattern: <what approach worked — e.g., "Used vi.mock() for module-level mocking", "Tested pure functions without mocking dependencies">
-- Test style: <what test patterns were effective — e.g., "describe/it blocks with factory helpers", "table-driven tests">
-- Mocking: <what mocking approach was used — e.g., "vi.spyOn for methods", "manual mock objects", "no mocking needed">
-```
-
-**On FAILURE**: Extract what to avoid:
-```
-## Lesson — <timestamp>
-- Target: <file>
-- Type: FAILURE
-- Anti-pattern: <what approach failed — e.g., "Tried to mock private methods directly", "Used real network calls in tests">
-- Reason: <why it failed — e.g., "TypeScript doesn't allow mocking private methods", "Network timeout in CI">
-```
-
-**On REVIEWER REJECT**: Extract quality insights:
-```
-## Lesson — <timestamp>
-- Target: <file>
-- Type: REVIEW_FEEDBACK
-- Issue: <what the Reviewer caught — e.g., "Tests had no error path coverage", "Assertions were too loose (toBeTruthy instead of specific values)">
-- Fix: <how it was resolved>
-```
-
-**Deduplication**: Before appending a new lesson, scan existing lessons for duplicates. If a lesson with the same Pattern/Anti-pattern already exists, skip it. Update the timestamp on existing lessons if the same pattern is confirmed again.
+**`.autocode/memory/lessons.md`**: Same as before (extract lessons on success, failure, and reviewer reject).
 
 ### Step 8: Clean Up Worktree
 
@@ -446,39 +487,25 @@ git worktree remove .autocode/worktrees/$BRANCH_NAME --force
 
 ### Step 9: Check Stop Conditions
 
-Before starting the next cycle, check the following conditions in order:
+Before starting the next cycle, check these conditions in order:
 
 #### 9a. Stop Signal
-Does `.autocode/STOP` file exist? If yes, stop gracefully. Print final summary.
+Does `.autocode/STOP` file exist? If yes, stop gracefully.
 
 #### 9b. Time Budget
-Has the total session time exceeded `manifest.time_budgets.cycle_max_seconds`? If yes, stop with message: "Time budget exceeded after <N> cycles."
+Has the total session time exceeded `manifest.time_budgets.cycle_max_seconds`?
 
 #### 9c. Consecutive Failures
-Read the last 5 entries from `.autocode/memory/velocity.md`. If ALL 5 are FAILURE:
-- Stop the loop
-- Print: "5 consecutive failures — pausing factory."
-- Print the failure reasons for each
-- Suggest: "Consider: lower the difficulty level, check test infrastructure, or run `/autocode-bootstrap` to refresh targets."
+Last 5 velocity entries are all FAILURE → stop.
 
 #### 9d. Consecutive Rejections
-Read the last 3 entries from `.autocode/memory/velocity.md`. If ALL 3 were rejected by the Reviewer (check for "Rejected by Reviewer" in failures.md):
-- Stop the loop
-- Print: "3 consecutive Reviewer rejections — pausing factory."
-- Print the rejection feedback summaries
-- Suggest: "Review the Reviewer feedback patterns. Consider updating agent prompts or project conventions."
+Last 3 velocity entries were all rejected by Reviewer → stop.
 
 #### 9e. Diminishing Returns
-Read `.autocode/memory/coverage.md`. Extract the coverage deltas from the last 5 SUCCESSFUL cycles (ignore failures). If ALL 5 deltas are less than 0.5%:
-- Stop the loop
-- Print: "Diminishing returns — last 5 coverage improvements were all < 0.5%."
-- Print the deltas: "+0.3%, +0.2%, +0.4%, +0.1%, +0.3%"
-- Suggest: "Options: (1) Advance to next difficulty level manually, (2) Run `/autocode-bootstrap` to refresh coverage gaps, (3) Set `ignore_diminishing_returns: true` in manifest to continue."
-
-If `manifest.ignore_diminishing_returns` is true, skip this check.
+Last 5 SUCCESSFUL coverage deltas are all < 0.5% → stop (unless `manifest.ignore_diminishing_returns` is true). This only applies to `coverage` type work items — features and bugfixes don't trigger diminishing returns.
 
 #### 9f. No More Targets
-If Step 1 found no suitable target (all gaps attempted/skipped), this was already handled in Step 1e. But double-check: if the gaps array is now empty after manifest refresh (Step 7), stop with: "All coverage targets met. Factory complete."
+If Step 1 found no suitable target, this was already handled in Step 1h.
 
 If no stop conditions met, go back to Step 1.
 
@@ -490,63 +517,32 @@ Track consecutive successes at the current difficulty level:
 
 Update the manifest's `difficulty.current_level` when changing levels.
 
+#### Difficulty Level Definitions
+
+| Level | Label | Work Types Enabled | File Types |
+|-------|-------|--------------------|-----------|
+| 1 | Simple tests | `coverage` only | `pure_function` files |
+| 2 | Standard tests | `coverage` only | `pure_function`, `utility` files |
+| 3 | Bug fixes | `coverage`, `bugfix` | All file types for coverage; bugfix from issues |
+| 4 | Integration work | `coverage`, `bugfix`, `feature` (small) | `service`, `handler` files for coverage |
+| 5 | Feature work | `coverage`, `bugfix`, `feature`, `refactor` | All types |
+| 6 | Complex changes | All types | All types |
+
+**Difficulty Level Filtering**: When building the work queue (Step 1c), filter coverage gaps by their `type` field:
+- Level 1: Only `pure_function` files
+- Level 2: `pure_function` and `utility` files
+- Level 3+: All file types
+
+When building the work queue (Steps 1b, 1d), filter non-coverage work items by difficulty level:
+- Level 1-2: Only `coverage` items (skip issues and backlog tasks)
+- Level 3-4: `coverage` + `bugfix` items
+- Level 5+: All work types enabled
+
+`review_response` and `focus` items are always enabled regardless of difficulty level.
+
 ### Step 10b: Manifest Refresh (Every 10 Cycles)
 
-After every 10 successful cycles (count from `.autocode/memory/velocity.md`), refresh the manifest's coverage data:
-
-#### Refresh Process
-
-1. **Check if refresh is due**: Count SUCCESS entries in velocity.md. If `success_count % 10 == 0` and `success_count > 0`, trigger a refresh.
-
-2. **Run coverage command**: Execute the coverage command from the manifest on the MAIN worktree (not a cycle worktree):
-   ```bash
-   cd <repo_root> && <manifest.commands.coverage>
-   ```
-
-3. **Parse updated coverage**: Extract per-file coverage percentages using the parser for `manifest.coverage.tool`.
-
-4. **Update gaps array**:
-   - Remove files that now exceed ALL coverage targets (statements, branches, functions, lines all above thresholds)
-   - Update coverage percentages for files still in the gaps array
-   - Add any NEW source files that appeared since bootstrap and have coverage below targets
-   - Re-sort by coverage percentage (ascending)
-   - Re-number priorities (1, 2, 3, ...)
-
-5. **Update current coverage**: Set `manifest.coverage.current` to the new overall percentages.
-
-6. **Filter new files**: When adding new files to gaps, exclude:
-   - Test files (matching `*.test.*`, `*.spec.*`, `test_*.*`)
-   - Type definition files (`*.d.ts`)
-   - Config files (matching `manifest.guardrails.immutable_patterns`)
-   - Generated files (matching common patterns like `dist/`, `build/`, `*.generated.*`)
-
-7. **Write updated manifest**: Save the updated `autocode.manifest.json`.
-
-8. **Log the refresh** to `.autocode/memory/velocity.md`:
-   ```
-   ## Manifest Refresh — <timestamp>
-   - Trigger: 10 successful cycles completed
-   - Files removed from gaps: <count> (reached coverage targets)
-   - Files added to gaps: <count> (new source files below targets)
-   - Remaining gaps: <count>
-   - Overall coverage: <X>%
-   ```
-
-9. **Report**: Print a brief refresh summary:
-   ```
-   Manifest refreshed after 10 successful cycles:
-     Gaps removed: <N> files reached coverage targets
-     Gaps added: <N> new files detected
-     Remaining: <N> coverage gaps
-     Overall: <X>% → <Y>%
-   ```
-
-#### Skip Conditions
-
-Skip the refresh if:
-- No coverage command is configured in the manifest
-- The main worktree has uncommitted changes (don't interfere with user work)
-- A `.autocode/STOP` file exists (factory is stopping anyway)
+Same as before — after every 10 successful cycles, refresh coverage data from the main worktree.
 
 ## Cycle Summary
 
@@ -555,6 +551,7 @@ After each cycle, print a brief summary:
 ```
 Cycle <N> complete:
   Target: <file>
+  Type: <work_type> (from <source>)
   Result: <SUCCESS|FAILURE>
   Agents: Scout → [Architect →] Builder → [Tester →] Reviewer
   Review: <APPROVED | APPROVED (after retry) | REJECTED (2x, abandoned)>
@@ -574,87 +571,35 @@ When the user runs `/autocode --parallel N` (or the manifest specifies `"paralle
 
 Before starting parallel cycles:
 
-1. **Build the work queue**: Take the top N×2 candidates from the gaps list (after applying skip rules from Step 1). Having 2× candidates ensures replacements are available if some are filtered by dependency checks.
+1. **Build the work queue**: Take the top N×2 candidates from the work queue (after applying all skip rules and priority sorting).
 
 2. **Dependency check**: For each candidate pair, check if they share dependencies:
    - Read each file's imports/requires
-   - If file A imports file B, or both import the same module, they CANNOT run in parallel (changes to shared dependencies could conflict)
-   - Build a conflict graph: `{fileA: [fileB, fileC], ...}`
+   - If file A imports file B, or both import the same module, they CANNOT run in parallel
 
-3. **Select N non-conflicting targets**: From the candidates, greedily pick N files that have no conflicts with each other. If fewer than N non-conflicting targets exist, run with fewer parallel pipelines.
+3. **Select N non-conflicting targets**: Greedily pick N items with no conflicts.
 
-4. **Log the work queue**:
-   ```
-   Parallel mode: N pipelines
-   Selected targets:
-     Pipeline 1: src/foo.ts (no conflicts)
-     Pipeline 2: src/bar.ts (no conflicts)
-     Pipeline 3: src/baz.ts (no conflicts)
-   Skipped (conflict with selected):
-     src/qux.ts (imports src/foo.ts)
-   ```
+4. **Log the work queue**.
 
 ### Execution
 
-1. **Create N worktrees**: Each on a unique branch:
-   ```bash
-   for target in targets:
-     BRANCH="autocode/$(date +%Y%m%d-%H%M%S)-$(basename $target)"
-     git worktree add .autocode/worktrees/$BRANCH -b $BRANCH
-   ```
-
-2. **Spawn N pipelines in parallel**: Use multiple Agent tool calls in a single message. Each agent runs the full pipeline independently:
-   - Scout → [Architect] → Builder → [Tester] → Reviewer
-   - Each agent works in its own worktree
-   - Each agent receives its own target file and worktree path
-
-3. **Collect results**: As each pipeline completes, record its result. Don't wait for all to finish before processing completed ones.
-
-4. **Ship successful pipelines**: For each pipeline that produced an APPROVED result:
-   - Commit, push, and create PR (Step 6)
-   - Monitor CI if applicable (Step 6b)
-
-5. **Handle failures**: For pipelines that failed:
-   - Log to failures.md
-   - Clean up the worktree
+1. Create N worktrees (each on a unique branch)
+2. Spawn N pipelines in parallel using multiple Agent tool calls
+3. Collect results
+4. Ship successful pipelines, handle failures
 
 ### Memory Coordination
 
-**IMPORTANT**: Memory updates happen AFTER all parallel pipelines complete, not during:
-- Collect all results into a batch
-- Write all velocity.md entries at once
-- Write all coverage.md entries at once
-- Write all fixes.md / failures.md entries at once
-- Write all lessons.md entries at once
-
-This prevents write conflicts when multiple pipelines try to update the same memory file.
+Memory updates happen AFTER all parallel pipelines complete (batched writes).
 
 ### Constraints
 
-- **Max parallel**: 5 pipelines (more risks git worktree issues and excessive resource usage)
-- **Default**: 1 (sequential mode)
-- **Configurable**: Set `"parallel": N` in the manifest root, or pass `--parallel N` to `/autocode`
-- **No file overlap**: No two pipelines may target the same file
-- **No dependency overlap**: No two pipelines may target files that import each other
-- **Independent failures**: If one pipeline fails, others continue unaffected
-- **Memory batching**: All memory writes happen after the batch completes
-
-### Parallel Cycle Summary
-
-After all parallel pipelines complete, print a batch summary:
-
-```
-Parallel batch complete (3 pipelines):
-  Pipeline 1: src/foo.ts — SUCCESS — PR #42 — +2.3% coverage
-  Pipeline 2: src/bar.ts — SUCCESS — PR #43 — +1.8% coverage
-  Pipeline 3: src/baz.ts — FAILURE — Reviewer rejected (2x)
-
-Batch totals:
-  Successes: 2/3
-  PRs created: 2
-  Coverage delta: +4.1% overall
-  Duration: 8m 32s
-```
+- Max parallel: 5 pipelines
+- Default: 1 (sequential)
+- No file overlap between pipelines
+- No dependency overlap between pipelines
+- Independent failures
+- Memory batching for all writes
 
 ## Error Handling
 
@@ -678,5 +623,6 @@ AutoCode session complete:
   Successes: <count>
   Failures: <count>
   PRs created: <count>
+  Work types: <count by type>
   Duration: <total time>
 ```

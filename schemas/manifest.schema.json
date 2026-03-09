@@ -116,6 +116,16 @@
                 "type": "integer",
                 "minimum": 1,
                 "description": "Priority rank (1 = highest)"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["pure_function", "utility", "handler", "service", "middleware", "infrastructure"],
+                "description": "Classification of the file type"
+              },
+              "complexity": {
+                "type": "string",
+                "enum": ["low", "medium", "high"],
+                "description": "Estimated complexity of the file"
               }
             }
           }
@@ -203,6 +213,82 @@
       "minimum": 1,
       "maximum": 5,
       "description": "Number of parallel pipelines to run simultaneously. Each pipeline gets its own worktree."
+    },
+    "work_sources": {
+      "type": ["object", "null"],
+      "description": "Configuration for work item sources beyond coverage gaps",
+      "properties": {
+        "coverage_gaps": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to include coverage gaps as work items"
+        },
+        "github_issues": {
+          "type": ["object", "null"],
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether to ingest GitHub Issues labeled for AutoCode"
+            },
+            "labels": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["autocode"],
+              "description": "Issue labels to filter for"
+            },
+            "exclude_labels": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["wontfix", "duplicate"],
+              "description": "Issue labels to exclude"
+            }
+          }
+        },
+        "backlog": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to read .autocode/backlog.md for work items"
+        },
+        "pr_reviews": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to pick up unaddressed PR review comments"
+        },
+        "tech_debt": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to scan for TODO/FIXME comments as work items"
+        }
+      }
+    },
+    "testing": {
+      "type": ["object", "null"],
+      "description": "Detected testing conventions for the project",
+      "properties": {
+        "file_pattern": {
+          "type": "string",
+          "description": "How test files are named (e.g., '*.test.ts', '*_test.py')"
+        },
+        "location": {
+          "type": "string",
+          "enum": ["co-located", "separate"],
+          "description": "Whether test files are co-located with source or in a separate directory"
+        },
+        "assertion_style": {
+          "type": "string",
+          "description": "Assertion library/style used (e.g., 'expect/toBe', 'assert', 'assert_eq!')"
+        },
+        "structure": {
+          "type": "string",
+          "description": "Test organization pattern (e.g., 'describe/it', 'test()', '#[test]')"
+        },
+        "helpers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Paths to shared test utilities or fixtures"
+        }
+      }
     }
   }
 }

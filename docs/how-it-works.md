@@ -4,27 +4,48 @@
 
 AutoCode runs a continuous cycle of work, inspired by [Karpathy's autoresearch](https://x.com/karpathy/status/1886192184808149383) pattern. Each cycle:
 
-1. **Select** a target (lowest-coverage file, filtered by failure history and skip rules)
-2. **Scout** gathers context (read-only exploration — skipped at Level 1-2)
-3. **Architect** designs a spec (what to change and why — skipped at Level 1-2)
-4. **Builder** implements the change (source + tests)
-5. **Tester** adds coverage (test files only — skipped at Level 1-2 for pure functions)
-6. **Reviewer** gates quality (approve or reject)
-7. **Ship** the PR (commit, push, create PR)
-8. **Monitor** CI after merge (auto-revert on failure)
-9. **Learn** from the result (update memory)
+1. **Select** a work item from the unified work queue
+2. **Route** the pipeline configuration based on work type
+3. **Scout** gathers context (read-only exploration — skipped at Level 1-2)
+4. **Architect** designs a spec (what to change and why — skipped at Level 1-2)
+5. **Builder** implements the change (source + tests)
+6. **Tester** adds coverage (test files only — skipped at Level 1-2 for pure functions)
+7. **Reviewer** gates quality (approve or reject)
+8. **Ship** the PR (commit, push, create PR)
+9. **Monitor** CI after merge (auto-revert on failure)
+10. **Learn** from the result (update memory)
 
-### Target Selection and Failure Memory
+### Work Queue
 
-Before selecting a target, the orchestrator parses `.autocode/memory/failures.md` to build a failure map. For each file, it counts attempts and checks for skip markers. The skip rules are applied in order:
+Before each cycle, the orchestrator builds a unified work queue from multiple sources:
 
-1. **Permanent skip**: File has a `PERMANENT SKIP` marker — always skipped
-2. **Too many failures**: File has 3+ total failure attempts — skipped (too hard at current level)
-3. **Cooldown**: File was attempted in the last 2 cycles — skipped
-4. **Immutable**: File matches an immutable pattern — skipped
-5. **Difficulty mismatch**: File doesn't match the current difficulty level — skipped
+1. **Focus overrides** (`.autocode/focus`) — user-specified priorities, always first
+2. **PR review feedback** — unblock existing PRs before creating new ones
+3. **GitHub Issues** — issues labeled `autocode` are parsed by type (bug, feature, refactor, docs)
+4. **Coverage gaps** — from the manifest, filtered by failure history and skip rules
+5. **Backlog** (`.autocode/backlog.md`) — manually defined tasks
+6. **Tech debt signals** — TODO/FIXME comments in source files (optional)
 
-If the selected target has 1-2 previous failures, the failure details are extracted and injected into the Builder prompt so it avoids repeating failed approaches.
+Each source produces typed work items (`coverage`, `feature`, `bugfix`, `refactor`, `docs`, `dependency`, `review_response`). Items are prioritized: focus > reviews > critical bugs > features/coverage > tech debt.
+
+The failure memory system still applies — files with 3+ failures are skipped, recently attempted files are on cooldown, and files with `PERMANENT SKIP` markers are always skipped.
+
+### Pipeline Routing
+
+Different work types use different pipeline configurations:
+
+| Type | Scout | Architect | Builder | Tester | Reviewer |
+|------|-------|-----------|---------|--------|----------|
+| `coverage` (L1-2) | inline | skip | yes | skip | yes |
+| `coverage` (L3+) | yes | yes | yes | yes | yes |
+| `feature` | yes | yes | yes | yes | yes |
+| `bugfix` | yes | optional | yes | yes | yes |
+| `refactor` | yes | yes | yes | yes | yes |
+| `docs` | yes | skip | yes | skip | skip |
+| `dependency` | skip | skip | yes | yes | yes |
+| `review_response` | skip | skip | yes | yes | yes |
+
+This routing ensures each work type gets the right level of analysis without wasting agent spawns.
 
 ### The Rejection Loop
 
@@ -38,6 +59,19 @@ The Reviewer is the quality gate. On **APPROVE**, the PR is shipped. On **REJECT
 
 A **hard REJECT** (immutable files modified) is immediate — no retry allowed, even during a retry attempt.
 
+### PR Review Response Loop
+
+When an existing AutoCode PR has unaddressed review comments, the orchestrator creates a `review_response` work item:
+
+1. The review comments are categorized:
+   - **Must fix**: bugs, errors, security issues, correctness problems
+   - **May skip**: style preferences, naming suggestions, optional improvements
+2. The Builder addresses each must-fix comment in the PR's branch
+3. The Tester verifies fixes don't break anything
+4. A comment is posted to the PR summarizing what was fixed and what was intentionally skipped
+
+This allows AutoCode to iterate on feedback without human intervention.
+
 ## Manifest-Driven Architecture
 
 The `autocode.manifest.json` is the system's contract. Generated once by `/autocode-bootstrap`, it captures everything agents need to know:
@@ -47,6 +81,8 @@ The `autocode.manifest.json` is the system's contract. Generated once by `/autoc
 - **Where are the coverage gaps** and in what priority order?
 - **What are the guardrails** — what files are off-limits, what are the size limits?
 - **What difficulty level** should agents work at?
+- **What work sources** are enabled (coverage gaps, GitHub Issues, backlog, PR reviews, tech debt)?
+- **What testing conventions** does the project follow (file patterns, assertion style, test structure)?
 
 Agents reference manifest values directly (e.g., `manifest.commands.coverage`, `manifest.guardrails.immutable_patterns`) rather than using placeholder syntax. This prevents template injection issues and makes agent prompts self-documenting.
 
@@ -82,9 +118,9 @@ Every cycle runs in its own git worktree — a separate working directory on a s
 
 AutoCode maintains per-repo memory in `.autocode/memory/`:
 
-- **fixes.md**: What was successfully changed and how
+- **fixes.md**: What was successfully changed and how (includes work type for each entry)
 - **failures.md**: What was attempted and why it failed (with attempt counts — 3+ triggers automatic skip)
-- **velocity.md**: Cycle-by-cycle timing and results
+- **velocity.md**: Cycle-by-cycle timing and results (includes work type per cycle for throughput tracking)
 - **coverage.md**: Per-file coverage progression over time (real measured deltas, not estimates)
 - **lessons.md**: Patterns that work and anti-patterns that don't — extracted after every cycle and injected into future Builder prompts
 - **costs.md**: Per-cycle cost estimates based on model usage, with running totals
@@ -120,14 +156,16 @@ The coverage parser supports v8/istanbul (TypeScript/JavaScript), pytest-cov (Py
 
 AutoCode starts with easy wins and graduates to harder tasks:
 
-| Level | Description | What It Means |
-|-------|-------------|---------------|
-| 1 | Pure function coverage | Test functions with no side effects — just input -> output |
-| 2 | Utility/helper coverage | Test utilities that may need light mocking |
-| 3 | Fix failing tests | Make existing broken tests pass |
-| 4 | Integration coverage | Test code with DB, API, or service interactions |
-| 5 | Feature implementation | Implement features from tickets/specs |
-| 6 | Refactoring | Restructure code while preserving behavior |
+| Level | Label | Work Types | File Types |
+|-------|-------|------------|-----------|
+| 1 | Simple tests | `coverage` only | Pure functions |
+| 2 | Standard tests | `coverage` only | Pure functions, utilities |
+| 3 | Bug fixes | `coverage`, `bugfix` | All file types |
+| 4 | Integration work | `coverage`, `bugfix`, `feature` (small) | Services, handlers |
+| 5 | Feature work | All except complex refactors | All types |
+| 6 | Complex changes | All types | All types |
+
+At Level 3+, AutoCode can pull work from GitHub Issues instead of only coverage gaps. Review responses and focus overrides are always enabled regardless of level.
 
 After 3 consecutive successes at a level, AutoCode advances to the next. After 3 consecutive failures, it drops back one level (minimum level 1). This prevents wasting cycles on tasks that are too hard.
 
@@ -139,7 +177,7 @@ The factory stops when any of these conditions are met (checked in order):
 2. **Time budget**: Total session time exceeds `manifest.time_budgets.cycle_max_seconds`
 3. **Consecutive failures**: The last 5 velocity entries are all FAILURE — prints failure reasons and suggests lowering difficulty or refreshing targets
 4. **Consecutive rejections**: The last 3 cycles were all rejected by the Reviewer — prints rejection feedback summaries and suggests reviewing Reviewer feedback patterns
-5. **Diminishing returns**: The last 5 *successful* coverage deltas are all < 0.5% — prints the deltas and suggests advancing difficulty, refreshing gaps, or setting `ignore_diminishing_returns: true` in the manifest to continue
+5. **Diminishing returns**: The last 5 *successful* coverage deltas are all < 0.5% — prints the deltas and suggests advancing difficulty, refreshing gaps, or setting `ignore_diminishing_returns: true` in the manifest to continue. Note: this only applies to `coverage` work items; other work types are not subject to diminishing returns detection.
 6. **No more targets**: All coverage gaps have been attempted, skipped, or met their targets
 
 ## Auto-Revert
