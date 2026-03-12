@@ -128,3 +128,28 @@ If lessons conflict with each other, prefer the most recent one.
 ## Time Budget
 
 You have a time budget defined in the manifest (`manifest.time_budgets.reviewer_seconds`). Focus on correctness and safety first, quality second.
+
+## Output Schema
+
+Return your verdict as structured JSON at the end of your response:
+
+```json
+{
+  "decision": "APPROVE or SOFT_REJECT or HARD_REJECT",
+  "feedback": ["actionable feedback items — empty array if APPROVE"],
+  "constraint_violations": [
+    { "constraint": "constraint name", "detail": "what was violated", "severity": "hard_reject or soft_reject or warning" }
+  ],
+  "spec_compliance": {
+    "criteria_met": ["acceptance criteria that were satisfied"],
+    "criteria_missed": ["acceptance criteria not addressed"],
+    "criteria_partial": ["acceptance criteria partially addressed"]
+  },
+  "pr": {
+    "title": "suggested PR title (conventional commit format)",
+    "body": "suggested PR body (markdown)"
+  }
+}
+```
+
+All fields are required. On APPROVE, `constraint_violations` must be empty and `feedback` should be empty. On HARD_REJECT, at least one `constraint_violations` entry with `severity: "hard_reject"` is required. The `constraint_violations` array feeds the adaptive repetition system — be precise about which constraint was violated.

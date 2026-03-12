@@ -84,3 +84,25 @@ If lessons conflict with each other, prefer the most recent one.
 ## Time Budget
 
 You have a time budget defined in the manifest (`manifest.time_budgets.tester_seconds`). Prioritize breadth of coverage over test complexity.
+
+## Output Schema
+
+Return your result as structured JSON at the end of your response:
+
+```json
+{
+  "tests_added": [
+    { "file": "relative/path/to/test", "cases": ["test case names"] }
+  ],
+  "coverage_before": 0.0,
+  "coverage_after": 0.0,
+  "coverage_delta": 0.0,
+  "all_tests_pass": true,
+  "constraint_adherence": {
+    "source_files_touched": [],
+    "only_test_files": true
+  }
+}
+```
+
+All fields are required. `constraint_adherence.source_files_touched` must be empty and `only_test_files` must be true — you may ONLY write test files. The orchestrator validates this before passing to Reviewer.
