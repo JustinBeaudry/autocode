@@ -76,7 +76,7 @@
     "pattern_database": true,
     "human_feedback": true,
     "pattern_retention_days": 90,
-    "constraint_violations": true
+    "coherence": true
   },
   "ci": {
     "auto_fix": true,

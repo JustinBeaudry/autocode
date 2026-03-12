@@ -290,7 +290,7 @@ Assemble the `autocode.manifest.json` with all detected values. Use sensible def
     "pattern_database": true,
     "human_feedback": true,
     "pattern_retention_days": 90,
-    "constraint_violations": true
+    "coherence": true
   },
   "ci": {
     "auto_fix": true,
@@ -395,7 +395,7 @@ Also create the `.autocode/memory/` directory with seeded memory files (not empt
 - `.autocode/memory/patterns.json` — `{"version": 1, "patterns": []}`
 - `.autocode/memory/ci_patterns.json` — `{"version": 1, "patterns": [], "stats": {"total_failures": 0, "auto_fixed": 0, "reverted": 0, "fix_rate": 0}}`
 - `.autocode/memory/feedback_log.json` — `{"ingested_prs": [], "last_check": null}`
-- `.autocode/memory/constraint_violations.json` — `{"violations": [], "last_updated": "<timestamp>"}`
+- `.autocode/memory/constraint_violations.json` (only if `brain.coherence` is true) — `{"violations": [], "last_updated": "<timestamp>"}`
 
 Add `.autocode/` and `autocode.manifest.json` to `.gitignore` if not already present.
 

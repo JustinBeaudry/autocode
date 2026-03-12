@@ -6,7 +6,7 @@ AutoCode uses a 6-layer context contract and adaptive constraint repetition to m
 
 LLMs use causal attention — early tokens can't see later tokens. Critical constraints stated once in a long prompt may not receive sufficient attention. Research shows that repeating the prompt improves non-reasoning model performance without increasing output tokens (Leviathan et al., 2025), though it does increase prompt/input tokens and may therefore impact latency and cost.
 
-AutoCode applies this selectively: only constraint-bearing content is repeated, and only for non-reasoning models.
+AutoCode applies this selectively: only constraint-bearing content is repeated, and only for non-reasoning models. The entire system can be disabled with `brain.coherence: false` in the manifest.
 
 ## The 6-Layer Contract
 

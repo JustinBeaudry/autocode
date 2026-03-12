@@ -395,10 +395,10 @@
           "minimum": 7,
           "description": "How long patterns are retained before being pruned. Older patterns receive lower weight in retrieval."
         },
-        "constraint_violations": {
+        "coherence": {
           "type": "boolean",
           "default": true,
-          "description": "Enable adaptive constraint violation tracking (.autocode/memory/constraint_violations.json). Weights Layer 6 repetition by historical violation frequency."
+          "description": "Enable the coherence architecture: 6-layer context assembly with Layer 6 adaptive constraint repetition for non-reasoning models, plus violation tracking in .autocode/memory/constraint_violations.json. When false, prompts use Layers 1-5 only."
         }
       }
     },

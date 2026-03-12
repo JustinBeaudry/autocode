@@ -129,7 +129,7 @@ Model Classification:
 
 **Load constraint violations** (for Layer 6 weighting):
 
-If `manifest.brain.constraint_violations` is enabled (true or not explicitly set to false):
+If `manifest.brain.coherence` is enabled (true or not explicitly set to false):
 - Read `.autocode/memory/constraint_violations.json`. If it doesn't exist, initialize with empty violations array.
 - Score each constraint:
   ```
@@ -139,9 +139,10 @@ If `manifest.brain.constraint_violations` is enabled (true or not explicitly set
   ```
 - Sort constraints by score descending. This ordering is used in Layer 6 for all non-reasoning agents.
 
-If `manifest.brain.constraint_violations` is disabled (explicitly false):
+If `manifest.brain.coherence` is disabled (explicitly false):
 - Do not read, create, or update `.autocode/memory/constraint_violations.json`.
-- Skip constraint-based Layer 6 weighting; non-reasoning agents operate without adaptive repetition.
+- Skip Layer 6 entirely — prompts are assembled from Layers 1-5 only.
+- Model classification still runs (for logging) but has no behavioral effect.
 
 ### Step 0f: Run Discovery (if enabled)
 
@@ -429,8 +430,8 @@ Validate upstream output against expected schema before including. If validation
 - Knowledge graph entries for target + its dependencies
 - CI patterns relevant to this module (if work type is ci_fix)
 
-**Layer 6 — CONSTRAINT REPETITION** (non-reasoning models only):
-If the agent's model is classified as `reasoning: false`, append a repeated constraints block:
+**Layer 6 — CONSTRAINT REPETITION** (non-reasoning models only, requires `manifest.brain.coherence` enabled):
+If `manifest.brain.coherence` is true and the agent's model is classified as `reasoning: false`, append a repeated constraints block:
 
 ```
 --- CRITICAL CONSTRAINTS (repeated for adherence) ---
@@ -901,7 +902,7 @@ On each cycle, extract structured patterns from the result:
 
 **Prune stale patterns**: After updating, remove any patterns where `last_used` is older than `manifest.brain.pattern_retention_days` (default: 90 days).
 
-**`.autocode/memory/constraint_violations.json`** (if `manifest.brain.constraint_violations` is true):
+**`.autocode/memory/constraint_violations.json`** (if `manifest.brain.coherence` is true):
 
 If the Reviewer returned `constraint_violations` in its output (on SOFT_REJECT or HARD_REJECT):
 1. Read `constraint_violations.json`
