@@ -277,17 +277,20 @@ Assemble the `autocode.manifest.json` with all detected values. Use sensible def
     "advance_when": "3 consecutive successful cycles at current level"
   },
   "model_routing": {
-    "scout": "sonnet",
-    "architect": "sonnet",
-    "builder": "opus",
-    "tester": "sonnet",
-    "reviewer": "opus"
+    "scout":      { "model": "sonnet", "reasoning": false },
+    "architect":  { "model": "sonnet", "reasoning": false },
+    "builder":    { "model": "opus",   "reasoning": true },
+    "tester":     { "model": "sonnet", "reasoning": false },
+    "reviewer":   { "model": "opus",   "reasoning": true },
+    "planner":    { "model": "sonnet", "reasoning": false },
+    "discoverer": { "model": "sonnet", "reasoning": false }
   },
   "brain": {
     "knowledge_graph": true,
     "pattern_database": true,
     "human_feedback": true,
-    "pattern_retention_days": 90
+    "pattern_retention_days": 90,
+    "constraint_violations": true
   },
   "ci": {
     "auto_fix": true,
@@ -349,6 +352,11 @@ Assemble the `autocode.manifest.json` with all detected values. Use sensible def
 }
 ```
 
+**Auto-detection defaults for `model_routing.reasoning`:**
+- Models containing "o1", "o3", "r1", "deepthink", or "opus" default to `reasoning: true`
+- All other models default to `reasoning: false`
+- Users can override any value in the manifest after bootstrap
+
 ### 10b. Prompt for Work Sources
 
 Ask the user about enabling additional work sources:
@@ -387,6 +395,7 @@ Also create the `.autocode/memory/` directory with seeded memory files (not empt
 - `.autocode/memory/patterns.json` — `{"version": 1, "patterns": []}`
 - `.autocode/memory/ci_patterns.json` — `{"version": 1, "patterns": [], "stats": {"total_failures": 0, "auto_fixed": 0, "reverted": 0, "fix_rate": 0}}`
 - `.autocode/memory/feedback_log.json` — `{"ingested_prs": [], "last_check": null}`
+- `.autocode/memory/constraint_violations.json` — `{"violations": [], "last_updated": "<timestamp>"}`
 
 Add `.autocode/` and `autocode.manifest.json` to `.gitignore` if not already present.
 
