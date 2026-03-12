@@ -25,8 +25,8 @@ Every agent prompt is assembled from 6 layers:
 
 Models are classified as reasoning or non-reasoning:
 - **Explicit**: `model_routing.<agent>.reasoning` in the manifest
-- **Auto-detect**: Models containing "o1", "o3", "r1", "deepthink", "opus" → reasoning
-- **Default**: sonnet → non-reasoning
+- **Default by tier**: "opus" → reasoning (extended thinking), everything else → non-reasoning
+- For non-Claude models, set the `reasoning` flag explicitly
 
 Layer 6 is applied only to non-reasoning models.
 

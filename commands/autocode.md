@@ -107,9 +107,10 @@ Read `model_routing` from the manifest and classify each agent's model:
 
 **Classification rules (most specific wins):**
 1. If `model_routing.<agent>` is an object with `reasoning` field → use that value
-2. If `model_routing.<agent>` is a string → auto-detect:
-   - `reasoning: true` if model name contains: "o1", "o3", "r1", "deepthink", "opus"
-   - `reasoning: false` otherwise
+2. If `model_routing.<agent>` is a string → default by model tier:
+   - `reasoning: true` if model name contains "opus" (extended thinking by default)
+   - `reasoning: false` otherwise (sonnet, haiku, etc.)
+   - For non-Claude models, set the `reasoning` flag explicitly in the manifest
 3. If `model_routing.<agent>` is not set → use defaults (sonnet = non-reasoning, opus = reasoning)
 
 Log the classification:

@@ -352,10 +352,10 @@ Assemble the `autocode.manifest.json` with all detected values. Use sensible def
 }
 ```
 
-**Auto-detection defaults for `model_routing.reasoning`:**
-- Models containing "o1", "o3", "r1", "deepthink", or "opus" default to `reasoning: true`
-- All other models default to `reasoning: false`
-- Users can override any value in the manifest after bootstrap
+**Default reasoning classification by model tier:**
+- Models containing "opus" default to `reasoning: true` (extended thinking)
+- All other models (sonnet, haiku, etc.) default to `reasoning: false`
+- For non-Claude models, users should set the `reasoning` flag explicitly after bootstrap
 
 ### 10b. Prompt for Work Sources
 
