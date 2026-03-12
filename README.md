@@ -124,7 +124,45 @@ AutoCode finds work without being told:
 
 ### Coherence Architecture
 
-A 6-layer context contract ensures every agent prompt is assembled consistently. Adaptive constraint repetition emphasizes frequently-violated rules for non-reasoning models, weighted by historical violation data. See [docs/coherence.md](docs/coherence.md) for details.
+LLMs use causal attention — constraints stated once in a long prompt may lose influence by generation time. AutoCode addresses this with a 6-layer context contract and adaptive constraint repetition.
+
+**The 6 layers** — every agent prompt is assembled from:
+
+| Layer | What | Source |
+|-------|------|--------|
+| 1. Role | Identity + write constraints | `agents/*.md` |
+| 2. Universal | Guardrails, immutables, budget | Manifest + runtime |
+| 3. Work Item | Target, type, guidance | Work queue |
+| 4. Pipeline | Upstream context | Scout/Architect output |
+| 5. Memory | Patterns, failures, knowledge | `.autocode/memory/` |
+| 6. Constraints | Repeated critical rules | Layers 1+2 extract |
+
+**Layer 6** repeats the most important constraints (write scope, immutable files, PR limits) at the end of the prompt for non-reasoning models (Sonnet, Haiku). Reasoning models (Opus) skip Layer 6 — extended thinking handles constraint adherence natively.
+
+**Adaptive weighting** — constraint repetition is ordered by historical violation frequency. Rules that agents break most often appear first in the repetition block. Violations are tracked in `.autocode/memory/constraint_violations.json` and decay over time so stale violations don't dominate.
+
+**Cost impact** — Layer 6 adds ~200-500 input tokens per agent spawn. At Sonnet pricing, this is roughly $0.001-0.003 per spawn — negligible relative to the overall cycle cost. Output tokens are unaffected.
+
+**Configuration:**
+```json
+{
+  "brain": {
+    "coherence": true
+  }
+}
+```
+Set `brain.coherence` to `false` to disable Layer 6 and violation tracking entirely. Prompts will use Layers 1-5 only. Enabled by default.
+
+**Model classification** is automatic — Opus is treated as reasoning, everything else as non-reasoning. Override per-agent with the object form:
+```json
+{
+  "model_routing": {
+    "builder": { "model": "opus", "reasoning": true }
+  }
+}
+```
+
+See [docs/coherence.md](docs/coherence.md) for the full spec.
 
 ### Persistent Brain
 
@@ -214,6 +252,9 @@ Yes. When you review and merge (or close) an AutoCode PR with comments, the orch
 
 **What happens when CI fails after merge?**
 AutoCode reads the CI logs, categorizes the failure, and attempts to fix it (up to 2 attempts by default). If the fix works, it ships a `ci-fix` PR. If not, it falls back to reverting. CI failure patterns are tracked so future fixes get smarter. Set `ci.auto_fix: false` in the manifest for the old behavior (immediate revert).
+
+**What is the coherence architecture?**
+A system that repeats critical constraints (write scope, immutable files, PR limits) at the end of agent prompts for non-reasoning models. It improves constraint adherence without changing output behavior. Violations are tracked and the most-broken rules are emphasized first. Adds ~$0.001-0.003 per agent spawn in input tokens. Disable with `brain.coherence: false` in the manifest.
 
 **How do I customize it?**
 Edit `autocode.manifest.json` or the agent files directly. See [docs/customization.md](docs/customization.md) for details.
