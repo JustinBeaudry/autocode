@@ -76,10 +76,23 @@ def validate_manifest(filepath):
             if "session_max_usd" in budget and budget["session_max_usd"] < 0.50:
                 errors.append(f"budget.session_max_usd too low: {budget['session_max_usd']}")
 
-    # Validate model_routing
+    # Validate model_routing (supports string or {model, reasoning} object)
     routing = data.get("model_routing", {})
     valid_models = ["haiku", "sonnet", "opus"]
-    for agent, model in routing.items():
+    for agent, value in routing.items():
+        if isinstance(value, str):
+            model = value
+        elif isinstance(value, dict):
+            model = value.get("model")
+            if model is None:
+                errors.append(f"model_routing.{agent} object missing 'model' field")
+                continue
+            reasoning = value.get("reasoning")
+            if reasoning is not None and not isinstance(reasoning, bool):
+                errors.append(f"model_routing.{agent}.reasoning should be boolean, got {type(reasoning).__name__}")
+        else:
+            errors.append(f"model_routing.{agent} should be a string or object, got {type(value).__name__}")
+            continue
         if model not in valid_models:
             errors.append(f"model_routing.{agent} has invalid model: {model}")
 

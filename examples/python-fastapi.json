@@ -63,17 +63,20 @@
     "advance_when": "3 consecutive successful cycles at current level"
   },
   "model_routing": {
-    "scout": "sonnet",
-    "architect": "sonnet",
-    "builder": "opus",
-    "tester": "sonnet",
-    "reviewer": "opus"
+    "scout": { "model": "sonnet", "reasoning": false },
+    "architect": { "model": "sonnet", "reasoning": false },
+    "builder": { "model": "opus", "reasoning": true },
+    "tester": { "model": "sonnet", "reasoning": false },
+    "reviewer": { "model": "opus", "reasoning": true },
+    "planner": { "model": "sonnet", "reasoning": false },
+    "discoverer": { "model": "sonnet", "reasoning": false }
   },
   "brain": {
     "knowledge_graph": true,
     "pattern_database": true,
     "human_feedback": true,
-    "pattern_retention_days": 90
+    "pattern_retention_days": 90,
+    "constraint_violations": true
   },
   "ci": {
     "auto_fix": true,
