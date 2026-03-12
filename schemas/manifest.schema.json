@@ -307,7 +307,8 @@
           "default": "sonnet",
           "description": "Model for the Discoverer agent (proactive codebase discovery). Default: sonnet."
         }
-      }
+      },
+      "additionalProperties": false
     },
     "ignore_diminishing_returns": {
       "type": "boolean",
