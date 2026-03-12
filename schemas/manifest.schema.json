@@ -195,12 +195,120 @@
     "model_routing": {
       "type": ["object", "null"],
       "properties": {
-        "scout": { "type": "string", "default": "sonnet", "description": "Model for the Scout agent (read-only codebase exploration). Default: sonnet. Sonnet recommended. Haiku may fail on repos with many MCP tools due to schema size limits." },
-        "architect": { "type": "string", "default": "sonnet", "description": "Model for the Architect agent (spec writing, L3+ only). Default: sonnet." },
-        "builder": { "type": "string", "default": "opus", "description": "Model for the Builder agent (implementation). Default: opus." },
-        "tester": { "type": "string", "default": "sonnet", "description": "Model for the Tester agent (test writing, L3+ only). Default: sonnet." },
-        "reviewer": { "type": "string", "default": "opus", "description": "Model for the Reviewer agent (quality gate). Default: opus." }
-      }
+        "scout": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "required": ["model"],
+              "properties": {
+                "model": { "type": "string" },
+                "reasoning": { "type": "boolean", "default": false }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "default": "sonnet",
+          "description": "Model for the Scout agent (read-only codebase exploration). Default: sonnet. Sonnet recommended. Haiku may fail on repos with many MCP tools due to schema size limits."
+        },
+        "architect": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "required": ["model"],
+              "properties": {
+                "model": { "type": "string" },
+                "reasoning": { "type": "boolean", "default": false }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "default": "sonnet",
+          "description": "Model for the Architect agent (spec writing, L3+ only). Default: sonnet."
+        },
+        "builder": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "required": ["model"],
+              "properties": {
+                "model": { "type": "string" },
+                "reasoning": { "type": "boolean", "default": true }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "default": "opus",
+          "description": "Model for the Builder agent (implementation). Default: opus."
+        },
+        "tester": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "required": ["model"],
+              "properties": {
+                "model": { "type": "string" },
+                "reasoning": { "type": "boolean", "default": false }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "default": "sonnet",
+          "description": "Model for the Tester agent (test writing, L3+ only). Default: sonnet."
+        },
+        "reviewer": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "required": ["model"],
+              "properties": {
+                "model": { "type": "string" },
+                "reasoning": { "type": "boolean", "default": true }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "default": "opus",
+          "description": "Model for the Reviewer agent (quality gate). Default: opus."
+        },
+        "planner": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "required": ["model"],
+              "properties": {
+                "model": { "type": "string" },
+                "reasoning": { "type": "boolean", "default": false }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "default": "sonnet",
+          "description": "Model for the Planner agent (task decomposition into multi-PR plans). Default: sonnet."
+        },
+        "discoverer": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "required": ["model"],
+              "properties": {
+                "model": { "type": "string" },
+                "reasoning": { "type": "boolean", "default": false }
+              },
+              "additionalProperties": false
+            }
+          ],
+          "default": "sonnet",
+          "description": "Model for the Discoverer agent (proactive codebase discovery). Default: sonnet."
+        }
+      },
+      "additionalProperties": false
     },
     "ignore_diminishing_returns": {
       "type": "boolean",
@@ -286,6 +394,11 @@
           "default": 90,
           "minimum": 7,
           "description": "How long patterns are retained before being pruned. Older patterns receive lower weight in retrieval."
+        },
+        "coherence": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the coherence architecture: 6-layer context assembly with Layer 6 adaptive constraint repetition for non-reasoning models, plus violation tracking in .autocode/memory/constraint_violations.json. When false, prompts use Layers 1-5 only."
         }
       }
     },

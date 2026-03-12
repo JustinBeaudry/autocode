@@ -400,6 +400,10 @@ AutoCode tracks per-cycle cost estimates based on model usage:
 
 This helps teams understand the ROI of automated coverage work and set budgets appropriately.
 
+## Coherence Architecture
+
+AutoCode maintains quality through a 6-layer context contract and adaptive constraint repetition. Every agent prompt is assembled from structured layers (role, universal context, work item, pipeline outputs, memory, and constraint repetition). For non-reasoning models, critical constraints are selectively repeated at the end of the prompt — weighted by historical violation frequency so the most-violated constraints get the most emphasis. See [coherence.md](coherence.md) for details.
+
 ## Cost Considerations
 
 AutoCode is designed to be cost-efficient:

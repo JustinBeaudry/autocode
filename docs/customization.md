@@ -275,7 +275,8 @@ Control the persistent brain features:
     "knowledge_graph": true,
     "pattern_database": true,
     "human_feedback": true,
-    "pattern_retention_days": 90
+    "pattern_retention_days": 90,
+    "coherence": true
   }
 }
 ```
@@ -284,8 +285,9 @@ Control the persistent brain features:
 - **pattern_database** (default: true): Replaces unstructured lesson scanning with a weighted pattern database in `.autocode/memory/patterns.json`. Patterns are scored by success rate and recency, giving agents better guidance.
 - **human_feedback** (default: true): After each cycle, checks merged/closed AutoCode PRs for human review comments. Extracts patterns from human feedback to improve future cycles.
 - **pattern_retention_days** (default: 90): How long patterns are kept before pruning. Older patterns receive lower weight in scoring but are still used until pruned.
+- **coherence** (default: true): Enables the coherence architecture — 6-layer context assembly with Layer 6 adaptive constraint repetition for non-reasoning models, plus violation tracking. When false, prompts use Layers 1-5 only and `constraint_violations.json` is not read or written.
 
-To disable the brain entirely (v2 behavior), set all three booleans to false. The orchestrator will fall back to scanning `lessons.md` for unstructured lesson extraction.
+To disable the brain entirely (v2 behavior), set all booleans to false. The orchestrator will fall back to scanning `lessons.md` for unstructured lesson extraction.
 
 ### CI-Aware Shipping
 
@@ -526,6 +528,47 @@ Every 10 successful cycles, the orchestrator re-runs the coverage command on the
 The refresh is skipped if: no coverage command is configured, the main worktree has uncommitted changes, or a `.autocode/STOP` file exists.
 
 This means manual edits to `coverage.gaps` will be overwritten on the next refresh. To permanently exclude a file, add it to `guardrails.immutable_patterns` or mark it as `PERMANENT SKIP` in `failures.md`.
+
+## Coherence Tuning
+
+### Disable Coherence
+
+Set `coherence` to false in the brain section to disable the entire coherence architecture:
+```json
+"brain": {
+  "coherence": false
+}
+```
+
+This disables Layer 6 constraint repetition and violation tracking. Prompts are assembled from Layers 1-5 only. Output schemas still apply.
+
+### Model Classification Override
+
+Override auto-detection in the manifest:
+```json
+"model_routing": {
+  "builder": { "model": "opus", "reasoning": true },
+  "tester": { "model": "sonnet", "reasoning": false }
+}
+```
+
+### Seed Violation Data
+
+Pre-populate `.autocode/memory/constraint_violations.json` with known problem areas (requires `brain.coherence: true`):
+```json
+{
+  "violations": [
+    {
+      "constraint": "immutable_files",
+      "count": 3,
+      "last_violated": "2026-03-10",
+      "by_agent": { "builder": 2, "tester": 1 },
+      "severity": "hard_reject"
+    }
+  ],
+  "last_updated": "2026-03-10T00:00:00Z"
+}
+```
 
 ## Cross-Language Support
 

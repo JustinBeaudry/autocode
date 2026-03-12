@@ -96,3 +96,28 @@ Before returning the plan, verify:
 ## Time Budget
 
 You have a time budget defined in the manifest (`manifest.time_budgets.architect_seconds`, since planning is similar in scope). Prioritize a correct dependency graph over exhaustive descriptions.
+
+## Output Schema
+
+Return your plan as structured JSON at the end of your response:
+
+```json
+{
+  "id": "plan_YYYYMMDD_short_description",
+  "title": "human-readable plan title",
+  "status": "active",
+  "steps": [
+    {
+      "id": "step_1",
+      "title": "step description",
+      "work_type": "coverage|feature|bugfix|refactor|docs|dependency",
+      "target_files": ["relative/path/to/file"],
+      "description": "detailed description of what this step accomplishes",
+      "status": "pending",
+      "blocked_by": []
+    }
+  ]
+}
+```
+
+All fields are required per step. `blocked_by` contains step IDs (e.g., `["step_1"]`) — empty array means no dependencies. Steps must be ordered foundational-first. No circular dependencies. Each step must be independently shippable and within manifest guardrails.

@@ -122,6 +122,10 @@ AutoCode finds work without being told:
 - Vulnerable dependencies (npm/pip/cargo audit)
 - Stale TODOs older than 30 days
 
+### Coherence Architecture
+
+A 6-layer context contract ensures every agent prompt is assembled consistently. Adaptive constraint repetition emphasizes frequently-violated rules for non-reasoning models, weighted by historical violation data. See [docs/coherence.md](docs/coherence.md) for details.
+
 ### Persistent Brain
 
 Per-repo memory in `.autocode/memory/` that gets smarter over time:

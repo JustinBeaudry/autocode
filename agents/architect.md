@@ -100,3 +100,26 @@ If lessons conflict with each other, prefer the most recent one.
 ## Time Budget
 
 You have a time budget defined in the manifest (`manifest.time_budgets.architect_seconds`). A good spec is concise and complete — don't over-think it.
+
+## Output Schema
+
+Return your spec as structured JSON at the end of your response:
+
+```json
+{
+  "spec": {
+    "approach": "one-paragraph description of the implementation approach",
+    "acceptance_criteria": ["criterion 1", "criterion 2"],
+    "test_cases": ["test case descriptions"],
+    "edge_cases": ["edge cases to cover"],
+    "mocking_requirements": ["what needs mocking and how"],
+    "risks": ["potential risks or failure modes"]
+  },
+  "guardrail_compliance": {
+    "estimated_files": 0,
+    "estimated_lines": 0
+  }
+}
+```
+
+All fields are required. `guardrail_compliance` must be within manifest limits. The orchestrator validates this schema and passes it to Builder, Tester, and Reviewer.

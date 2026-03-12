@@ -263,6 +263,19 @@ All agents reference manifest values directly (e.g., `manifest.commands.coverage
 
 ---
 
+## Context Contract
+
+Every agent receives context assembled from a 6-layer contract. See [coherence.md](coherence.md) for full details.
+
+| Layer | Scout | Architect | Builder | Tester | Reviewer | Planner | Discoverer |
+|---|---|---|---|---|---|---|---|
+| 1. Role | yes | yes | yes | yes | yes | yes | yes |
+| 2. Universal | yes | yes | yes | yes | yes | yes | yes |
+| 3. Work Item | yes | yes | yes | yes | yes | yes | - |
+| 4. Pipeline | - | scout | spec or scout | spec + changes | spec + changes + coverage | - | - |
+| 5. Memory | yes | yes | yes | yes | yes | yes | work queue |
+| 6. Constraints | if non-reasoning | if non-reasoning | if non-reasoning | if non-reasoning | if non-reasoning | if non-reasoning | if non-reasoning |
+
 ## Agent Communication Flow
 
 ```

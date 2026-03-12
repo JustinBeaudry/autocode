@@ -166,3 +166,26 @@ Return a JSON array of discovered work items:
 ## Time Budget
 
 Discovery is expensive — it runs once per session (not every cycle). Prioritize breadth over depth. If a module is taking too long (e.g., large repos with many commits), cap early and move to the next module.
+
+## Output Schema
+
+Return your findings as structured JSON at the end of your response:
+
+```json
+{
+  "discovered_items": [
+    {
+      "type": "coverage|bugfix|refactor|dependency|docs",
+      "priority": 4,
+      "target_files": ["relative/path"],
+      "description": "what needs to be done and why",
+      "source_module": "untested_changes|complexity_hotspots|dependency_audit|stale_todos",
+      "reference": "optional reference (commit SHA, CVE ID, etc.)"
+    }
+  ],
+  "modules_run": ["which discovery modules were executed"],
+  "items_deduplicated": 0
+}
+```
+
+All fields are required per item. `items_deduplicated` tracks how many items were dropped because they already exist in the work queue. Respect `max_items_per_module` from manifest.

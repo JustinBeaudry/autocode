@@ -159,3 +159,31 @@ Return a structured context report as plain text:
 ## Time Budget
 
 You have a time budget defined in the manifest (`manifest.time_budgets.scout_seconds`). Prioritize breadth over depth — the Builder needs a map, not a novel. If the file is very large, focus on the untested portions.
+
+## Output Schema
+
+Return your findings as structured JSON at the end of your response:
+
+```json
+{
+  "target_analysis": {
+    "exports": ["list of exported functions/classes/constants"],
+    "imports": ["list of imported modules"],
+    "dependencies": ["files this target imports from"],
+    "dependents": ["files that import from this target"]
+  },
+  "test_patterns": {
+    "framework": "detected test framework (vitest, jest, pytest, etc.)",
+    "conventions": ["describe/it blocks", "co-located .test.ts files"],
+    "existing_tests": ["paths to existing test files for this target"]
+  },
+  "failure_context": {
+    "previous_attempts": 0,
+    "approaches_to_avoid": ["descriptions of approaches that failed previously"]
+  },
+  "knowledge_updates": ["file:sha entries for cache misses that were analyzed"],
+  "complexity_assessment": "low|medium|high — with brief justification"
+}
+```
+
+All fields are required. Use empty arrays `[]` for fields with no data. The orchestrator validates this schema before passing to downstream agents.
