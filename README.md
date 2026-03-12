@@ -27,7 +27,7 @@ Inspired by [Karpathy's autoresearch](https://x.com/karpathy/status/188619218480
 
 ```bash
 # 1. Clone
-git clone https://github.com/ajsai47/autocode.git
+git clone https://github.com/JustinBeaudry/autocode.git
 cd autocode
 
 # 2. Install (symlinks skills into ~/.claude/)
@@ -121,6 +121,10 @@ AutoCode finds work without being told:
 - Complexity hotspots (files > 300 lines with high churn)
 - Vulnerable dependencies (npm/pip/cargo audit)
 - Stale TODOs older than 30 days
+
+### Coherence Architecture
+
+A 6-layer context contract ensures every agent prompt is assembled consistently. Adaptive constraint repetition emphasizes frequently-violated rules for non-reasoning models, weighted by historical violation data. See [docs/coherence.md](docs/coherence.md) for details.
 
 ### Persistent Brain
 

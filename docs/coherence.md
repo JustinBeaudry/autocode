@@ -4,7 +4,7 @@ AutoCode uses a 6-layer context contract and adaptive constraint repetition to m
 
 ## Why Repetition
 
-LLMs use causal attention — early tokens can't see later tokens. Critical constraints stated once in a long prompt may not receive sufficient attention. Research shows that repeating the prompt improves non-reasoning model performance without increasing output tokens or latency (Leviathan et al., 2025).
+LLMs use causal attention — early tokens can't see later tokens. Critical constraints stated once in a long prompt may not receive sufficient attention. Research shows that repeating the prompt improves non-reasoning model performance without increasing output tokens (Leviathan et al., 2025), though it does increase prompt/input tokens and may therefore impact latency and cost.
 
 AutoCode applies this selectively: only constraint-bearing content is repeated, and only for non-reasoning models.
 
@@ -26,7 +26,6 @@ Every agent prompt is assembled from 6 layers:
 Models are classified as reasoning or non-reasoning:
 - **Explicit**: `model_routing.<agent>.reasoning` in the manifest
 - **Default by tier**: "opus" → reasoning (extended thinking), everything else → non-reasoning
-- For non-Claude models, set the `reasoning` flag explicitly
 
 Layer 6 is applied only to non-reasoning models.
 
