@@ -27,7 +27,7 @@ Inspired by [Karpathy's autoresearch](https://x.com/karpathy/status/188619218480
 
 ```bash
 # 1. Clone
-git clone https://github.com/JustinBeaudry/autocode.git
+git clone https://github.com/ajsai47/autocode.git
 cd autocode
 
 # 2. Install (symlinks skills into ~/.claude/)
