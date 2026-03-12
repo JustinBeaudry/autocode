@@ -101,6 +101,41 @@ Display estimated costs before starting:
 
 If the user is in auto-accept mode (non-interactive), skip confirmation and just log the estimate.
 
+### Step 0e: Model Classification and Coherence Setup
+
+Read `model_routing` from the manifest and classify each agent's model:
+
+**Classification rules (most specific wins):**
+1. If `model_routing.<agent>` is an object with `reasoning` field → use that value
+2. If `model_routing.<agent>` is a string → auto-detect:
+   - `reasoning: true` if model name contains: "o1", "o3", "r1", "deepthink", "opus"
+   - `reasoning: false` otherwise
+3. If `model_routing.<agent>` is not set → use defaults (sonnet = non-reasoning, opus = reasoning)
+
+Log the classification:
+```
+Model Classification:
+  scout:      sonnet  → non-reasoning → Layer 6 applied
+  architect:  sonnet  → non-reasoning → Layer 6 applied
+  builder:    opus    → reasoning     → Layer 6 skipped
+  tester:     sonnet  → non-reasoning → Layer 6 applied
+  reviewer:   opus    → reasoning     → Layer 6 skipped
+  planner:    sonnet  → non-reasoning → Layer 6 applied
+  discoverer: sonnet  → non-reasoning → Layer 6 applied
+```
+
+**Load constraint violations** (for Layer 6 weighting):
+Read `.autocode/memory/constraint_violations.json`. If it doesn't exist, initialize with empty violations array.
+
+Score each constraint:
+```
+score = count × recency_weight × severity_multiplier
+  severity_multiplier: hard_reject = 3, soft_reject = 2, warning = 1
+  recency_weight: last 3 cycles = 1.0, decays 0.5 per 3-cycle window
+```
+
+Sort constraints by score descending. This ordering is used in Layer 6 for all non-reasoning agents.
+
 ### Step 0b: Run Discovery (if enabled)
 
 If `manifest.discovery.enabled` is true:
@@ -345,6 +380,91 @@ If the manifest has a coverage command (`manifest.commands.coverage` is not null
 
 If coverage command is not available, skip this step.
 
+### Context Assembly (6-Layer Contract)
+
+Every agent prompt is assembled from 6 layers. The orchestrator builds each layer and validates completeness before spawning.
+
+**Layer 1 — ROLE**: Load the agent's `.md` file from `~/.claude/agents/<agent>.md`. This defines identity, capabilities, and write constraints.
+
+**Layer 2 — UNIVERSAL**: Extract from manifest and runtime state:
+- Guardrails: `manifest.guardrails.immutable_patterns`, `max_files_per_pr`, `max_lines_changed`
+- Immutable files: resolved list from immutable patterns
+- Current difficulty level: `manifest.difficulty.current_level`
+- Budget remaining: `session_budget - session_spent` for session, `cycle_budget` for this cycle
+- Enabled work sources: summary of which sources are active
+
+Format as:
+```
+## Universal Context
+- Guardrails: max 5 files, max 200 lines per PR
+- Immutable patterns: *.config.*, *.env*, .github/**, autocode.manifest.json
+- Difficulty: Level 3 (bug fixes + coverage, all file types)
+- Budget: $3.42 remaining this session, $2.00 per cycle
+- Work sources: coverage gaps, GitHub Issues, backlog, PR reviews
+```
+
+**Layer 3 — WORK ITEM**: From the selected work queue item:
+- Target file(s), work type, source
+- Type-specific guidance (the work type instructions — see Step 4's existing type-specific guidance, now applied to ALL pipeline agents, not just Builder)
+- Plan context if applicable (step ID, plan title, blocked_by)
+
+**Layer 4 — PIPELINE**: Outputs from upstream agents:
+- Scout → Architect, Builder: scout report (structured JSON)
+- Architect → Builder, Tester, Reviewer: spec (structured JSON)
+- Builder → Tester, Reviewer: changes summary (structured JSON)
+- Tester → Reviewer: coverage delta (structured JSON)
+
+Validate upstream output against expected schema before including. If validation fails, log warning and include raw output with a note: "WARNING: Upstream output did not match expected schema. Raw output included."
+
+**Layer 5 — MEMORY**: From `.autocode/memory/`:
+- Top N patterns by score, filtered to current work type and target file type
+- Failure history for the target file(s)
+- Knowledge graph entries for target + its dependencies
+- CI patterns relevant to this module (if work type is ci_fix)
+
+**Layer 6 — CONSTRAINT REPETITION** (non-reasoning models only):
+If the agent's model is classified as `reasoning: false`, append a repeated constraints block:
+
+```
+--- CRITICAL CONSTRAINTS (repeated for adherence) ---
+[ordered by violation frequency, highest first]
+WRITE SCOPE: You may ONLY modify [agent-specific scope].
+IMMUTABLE: Never modify files matching: [patterns from manifest]
+LIMITS: Maximum [N] files, [M] lines changed per PR.
+HARD REJECT: [agent-specific hard rejection criteria]
+BUDGET: $[X.XX] remaining this cycle.
+--- END CRITICAL CONSTRAINTS ---
+```
+
+If constraint_violations.json has data, the most-violated constraint is listed first. If no violation data exists (fresh install), use default ordering: write scope, immutable, limits, hard reject, budget.
+
+**Pre-spawn validation checklist:**
+
+Before spawning any agent, verify all required layers are present:
+
+| Agent | Required Layers |
+|-------|----------------|
+| scout | 1, 2, 3, 5 |
+| architect | 1, 2, 3, 4 (scout), 5 |
+| builder | 1, 2, 3, 4 (spec or scout), 5 |
+| tester | 1, 2, 3, 4 (spec + changes), 5 |
+| reviewer | 1, 2, 3, 4 (spec + changes + coverage), 5 |
+| planner | 1, 2, 3, 5 |
+| discoverer | 1, 2, 5 (work queue) |
+
+Layer 6 is added automatically based on model classification — not a validation target.
+
+Log the checklist per agent:
+```
+Spawning builder:
+  ✓ Layer 1: Role loaded (agents/builder.md)
+  ✓ Layer 2: Universal (guardrails, immutables, L3, $3.42 remaining)
+  ✓ Layer 3: Work item (src/auth.ts, bugfix, github_issue)
+  ✓ Layer 4: Pipeline (architect spec, 847 tokens)
+  ✓ Layer 5: Memory (3 patterns, 1 failure, 2 knowledge entries)
+  ○ Layer 6: Skipped (opus, reasoning: true)
+```
+
 ### Step 3: Gather Context (Scout)
 
 **Skip if pipeline config says "skip" for Scout** (e.g., `coverage` L1-2, `dependency`, `review_response`).
@@ -356,6 +476,14 @@ If coverage command is not available, skip this step.
 - `model`: From `manifest.model_routing.scout` (default: "sonnet")
 - `prompt`: Include the work item (type, description, target files, source), manifest contents, and any relevant failure memory
 - The Scout returns a context report
+
+Assemble the Scout prompt using the 6-Layer Contract:
+- **Layer 1**: Load `agents/scout.md`
+- **Layer 2**: Universal context (guardrails, immutables, difficulty, budget)
+- **Layer 3**: Work item (type, description, target files, source, plan context)
+- **Layer 4**: N/A (Scout is first in pipeline)
+- **Layer 5**: Patterns (top 5 by score), failure history for target, knowledge graph cache status
+- **Layer 6**: If non-reasoning model, append constraint repetition block with: read-only scope, immutable patterns, time budget
 
 **Pattern injection**: If `manifest.brain.pattern_database` is true (default), query `.autocode/memory/patterns.json` for the top 5 relevant patterns. Otherwise, fall back to scanning `.autocode/memory/lessons.md` for the 5 most recent relevant lessons.
 
@@ -404,6 +532,14 @@ Spawn an Architect agent:
 - `prompt`: Include the work item, Scout's context report, manifest contents, and current difficulty level
 - The Architect returns a structured spec
 
+Assemble the Architect prompt using the 6-Layer Contract:
+- **Layer 1**: Load `agents/architect.md`
+- **Layer 2**: Universal context (guardrails, immutables, difficulty, budget)
+- **Layer 3**: Work item (type, description, target files, source)
+- **Layer 4**: Scout report (validated against scout output schema)
+- **Layer 5**: Patterns (top 5), failure history for target, knowledge graph context
+- **Layer 6**: If non-reasoning model, append constraint repetition block with: spec-only scope, guardrail limits, time budget
+
 Pass the Architect's spec to the Builder in Step 4 and to the Reviewer and Tester for validation.
 
 ### Step 3c: Budget-Aware Model Selection
@@ -443,6 +579,14 @@ Use the Agent tool to spawn a Builder agent:
   - Work type guidance (the Builder has type-specific instructions for each work type)
 - The Builder returns a result (SUCCESS or FAILURE)
 
+Assemble the Builder prompt using the 6-Layer Contract:
+- **Layer 1**: Load `agents/builder.md`
+- **Layer 2**: Universal context (guardrails, immutables, difficulty, budget)
+- **Layer 3**: Work item (type, description, target files, source) + type-specific guidance
+- **Layer 4**: Architect spec (validated) OR inline Scout context (at L1-2)
+- **Layer 5**: Patterns (top 5), failure history for target, knowledge graph context
+- **Layer 6**: If non-reasoning model, append constraint repetition block with: source-files-only scope, immutable patterns, file/line limits, budget
+
 **For `review_response` type**: The Builder prompt must include:
 - The original PR diff for context
 - Each must-fix review comment with its file location
@@ -460,6 +604,14 @@ Spawn a Tester agent:
 - `prompt`: Include the target file, Builder's change summary, Scout's context, Architect's spec (if available), manifest, and worktree path
 - The Tester adds edge case tests, error path tests, and runs coverage measurement
 - The Tester can ONLY modify test files — never source files
+
+Assemble the Tester prompt using the 6-Layer Contract:
+- **Layer 1**: Load `agents/tester.md`
+- **Layer 2**: Universal context (guardrails, immutables, difficulty, budget)
+- **Layer 3**: Work item (type, description, target files, source)
+- **Layer 4**: Architect spec (edge cases, acceptance criteria) + Builder changes (validated)
+- **Layer 5**: Patterns (top 5), failure history for target
+- **Layer 6**: If non-reasoning model, append constraint repetition block with: test-files-only scope, immutable patterns, no-source-modification, time budget
 
 If the Tester reports a test failure it cannot fix:
 1. Re-spawn the Builder with the Tester's error output for one fix attempt
@@ -486,6 +638,14 @@ Spawn a Reviewer agent:
 - `model`: From `manifest.model_routing.reviewer` (default: "opus")
 - `prompt`: Include the worktree path, manifest, Scout's context, Builder's result, Tester's result (if applicable), and Architect's spec (if available, for spec compliance checking)
 - The Reviewer returns a verdict: APPROVE or REJECT
+
+Assemble the Reviewer prompt using the 6-Layer Contract:
+- **Layer 1**: Load `agents/reviewer.md`
+- **Layer 2**: Universal context (guardrails, immutables, difficulty, budget)
+- **Layer 3**: Work item (type, description, target files, source)
+- **Layer 4**: Architect spec (for compliance check) + Builder changes + Tester coverage delta (all validated)
+- **Layer 5**: Patterns (top 5), failure history for target
+- **Layer 6**: If non-reasoning model, append constraint repetition block with: read-only scope, immutable hard-reject, file/line limits, spec compliance requirement
 
 #### 5c. Handle Verdict
 
@@ -733,6 +893,19 @@ On each cycle, extract structured patterns from the result:
 - **On REVIEWER REJECT**: Create a `review_pattern` category entry with the Reviewer's feedback as the description.
 
 **Prune stale patterns**: After updating, remove any patterns where `last_used` is older than `manifest.brain.pattern_retention_days` (default: 90 days).
+
+**`.autocode/memory/constraint_violations.json`** (if `manifest.brain.constraint_violations` is true):
+
+If the Reviewer returned `constraint_violations` in its output (on SOFT_REJECT or HARD_REJECT):
+1. Read `constraint_violations.json`
+2. For each violation in the Reviewer's output:
+   - If a matching constraint entry exists: increment `count`, update `last_violated`, increment `by_agent.<agent_name>`
+   - If no matching entry: create new entry with `count: 1`, `severity` from Reviewer's output
+3. Write updated `constraint_violations.json`
+
+If Builder or Tester self-reported constraint adherence issues (non-empty `immutable_files_touched` or `source_files_touched`):
+1. Create violation entries even if Reviewer didn't catch them (defense in depth)
+2. These self-reported violations get `severity: "self_reported"` with multiplier 1.5
 
 **`.autocode/memory/ci_patterns.json`** (if CI fix was attempted in Step 6b):
 
