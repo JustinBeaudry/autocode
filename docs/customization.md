@@ -527,6 +527,47 @@ The refresh is skipped if: no coverage command is configured, the main worktree 
 
 This means manual edits to `coverage.gaps` will be overwritten on the next refresh. To permanently exclude a file, add it to `guardrails.immutable_patterns` or mark it as `PERMANENT SKIP` in `failures.md`.
 
+## Coherence Tuning
+
+### Model Classification Override
+
+Override auto-detection in the manifest:
+```json
+"model_routing": {
+  "builder": { "model": "opus", "reasoning": true },
+  "tester": { "model": "sonnet", "reasoning": false }
+}
+```
+
+### Disable Adaptive Repetition
+
+Set `constraint_violations` to false in the brain section:
+```json
+"brain": {
+  "constraint_violations": false
+}
+```
+
+This disables Layer 6 entirely. Constraint keywords and output schemas still apply.
+
+### Seed Violation Data
+
+Pre-populate `.autocode/memory/constraint_violations.json` with known problem areas:
+```json
+{
+  "violations": [
+    {
+      "constraint": "immutable_files",
+      "count": 3,
+      "last_violated": "2026-03-10",
+      "by_agent": { "builder": 2, "tester": 1 },
+      "severity": "hard_reject"
+    }
+  ],
+  "last_updated": "2026-03-10T00:00:00Z"
+}
+```
+
 ## Cross-Language Support
 
 Bootstrap (`/autocode-bootstrap`) supports TypeScript, Python, Rust, and Go with specific coverage parser documentation for each:
