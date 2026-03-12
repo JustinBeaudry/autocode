@@ -207,6 +207,81 @@ for doc in "$ROOT/README.md" "$ROOT"/docs/*.md; do
 done
 echo ""
 
+# ── 10. Prompt Coherence — Agent Constraint Keywords ────────────
+echo "10. Prompt Coherence — Agent Constraint Keywords"
+
+check_keywords() {
+  local file="$1"
+  local name="$2"
+  shift 2
+  local missing=""
+  for kw in "$@"; do
+    if echo "$kw" | grep -q '|'; then
+      local found=0
+      IFS='|' read -ra alts <<< "$kw"
+      for alt in "${alts[@]}"; do
+        if grep -qi "$alt" "$file" 2>/dev/null; then
+          found=1
+          break
+        fi
+      done
+      if [ "$found" -eq 0 ]; then
+        missing="$missing $kw"
+      fi
+    else
+      if ! grep -qi "$kw" "$file" 2>/dev/null; then
+        missing="$missing $kw"
+      fi
+    fi
+  done
+  if [ -n "$missing" ]; then
+    fail "agents/$name.md — missing keywords:$missing"
+  else
+    pass "agents/$name.md — all constraint keywords present"
+  fi
+}
+
+check_keywords "$ROOT/agents/scout.md" "scout" "read-only|read only" "knowledge"
+check_keywords "$ROOT/agents/architect.md" "architect" "spec" "guardrail|max_files|max_lines" "acceptance criteria"
+check_keywords "$ROOT/agents/builder.md" "builder" "immutable" "source files only|source only" "test"
+check_keywords "$ROOT/agents/tester.md" "tester" "test files only|never modify source" "deterministic" "coverage"
+check_keywords "$ROOT/agents/reviewer.md" "reviewer" "APPROVE" "REJECT" "immutable" "spec compliance|acceptance criteria"
+check_keywords "$ROOT/agents/planner.md" "planner" "dependency|blocked_by" "atomic" "guardrail"
+check_keywords "$ROOT/agents/discoverer.md" "discoverer" "read-only|read only" "dedup"
+echo ""
+
+# ── 11. Prompt Coherence — Output Schema Keywords ──────────────
+echo "11. Prompt Coherence — Output Schema Keywords"
+
+check_keywords "$ROOT/agents/scout.md" "scout" "target_analysis|exports" "knowledge_updates"
+check_keywords "$ROOT/agents/architect.md" "architect" "acceptance_criteria" "guardrail_compliance|estimated_files"
+check_keywords "$ROOT/agents/builder.md" "builder" "constraint_adherence" "status"
+check_keywords "$ROOT/agents/tester.md" "tester" "coverage_delta" "constraint_adherence"
+check_keywords "$ROOT/agents/reviewer.md" "reviewer" "constraint_violations" "decision"
+echo ""
+
+# ── 12. Prompt Coherence — Context Contract ────────────────────
+echo "12. Prompt Coherence — Context Contract"
+
+if [ -f "$ROOT/commands/autocode.md" ]; then
+  for layer in "Layer 1" "Layer 2" "Layer 3" "Layer 4" "Layer 5" "Layer 6"; do
+    if grep -q "$layer" "$ROOT/commands/autocode.md" 2>/dev/null; then
+      pass "autocode.md references $layer"
+    else
+      fail "autocode.md missing reference to $layer"
+    fi
+  done
+
+  for concept in "reasoning" "constraint_violations" "non-reasoning" "Universal Context"; do
+    if grep -q "$concept" "$ROOT/commands/autocode.md" 2>/dev/null; then
+      pass "autocode.md mentions $concept"
+    else
+      fail "autocode.md missing mention of $concept"
+    fi
+  done
+fi
+echo ""
+
 # ── Summary ───────────────────────────────────────────────────────────
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Results: $PASS passed, $FAIL failed, $WARN warnings"
